@@ -7,7 +7,6 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from src.data_processor import prepare
-from src.mapping import VENDORS
 
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -817,11 +816,6 @@ def _display_interval(df: pd.DataFrame, lob_filter: list, vendor_filter: list):
 
 
 # ── Data loading ─────────────────────────────────────────────────────────────
-def _load_from_sharepoint():
-    from src.sharepoint import load_all_csvs
-    return load_all_csvs()
-
-
 def _load_from_uploads(files) -> pd.DataFrame:
     frames = []
     for f in files:
@@ -831,10 +825,6 @@ def _load_from_uploads(files) -> pd.DataFrame:
             st.sidebar.warning(f"Could not read {f.name}: {e}")
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
-
-@st.cache_data(ttl=300, show_spinner="Loading from SharePoint…")
-def _cached_sharepoint():
-    return _load_from_sharepoint()
 
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
@@ -861,26 +851,14 @@ with st.sidebar:
     )
     st.markdown("---")
 
-    st.markdown("### 📡 Data Source")
-    mode = st.radio(
-        "Source",
-        ["SharePoint (live)", "Upload CSV files"],
+    st.markdown("### 📂 Upload Data")
+    uploaded = st.file_uploader(
+        "Upload one or more CSV files",
+        type="csv",
+        accept_multiple_files=True,
         label_visibility="collapsed",
     )
-
-    if mode == "Upload CSV files":
-        uploaded = st.file_uploader(
-            "Upload one or more CSV files",
-            type="csv",
-            accept_multiple_files=True,
-        )
-        st.caption("Columns: SkillName, SupplierName, Interval, NCO, NCH, AHT, ABN, ASA")
-    else:
-        uploaded = None
-        if st.button("🔄 Refresh data", use_container_width=True):
-            st.cache_data.clear()
-            st.rerun()
-        st.caption("Auto-refreshes every 5 minutes.")
+    st.caption("Columns: SkillName, SupplierName, Interval, NCO, NCH, AHT, ABN, ASA")
 
 # ── Load & process ────────────────────────────────────────────────────────────
 summary_df = pd.DataFrame()
@@ -888,30 +866,15 @@ vendor_summaries: dict = {}
 interval_df = pd.DataFrame()
 data_ok = False
 
-if mode == "Upload CSV files":
-    if uploaded:
-        raw = _load_from_uploads(uploaded)
-        if not raw.empty:
-            summary_df, vendor_summaries, interval_df = prepare(raw)
-            data_ok = True
-        else:
-            st.warning("No data could be read from the uploaded files.")
+if uploaded:
+    raw = _load_from_uploads(uploaded)
+    if not raw.empty:
+        summary_df, vendor_summaries, interval_df = prepare(raw)
+        data_ok = True
     else:
-        st.info("Upload one or more CSV files from the sidebar to see the dashboard.")
+        st.warning("No data could be read from the uploaded files.")
 else:
-    try:
-        raw = _cached_sharepoint()
-        if not raw.empty:
-            summary_df, vendor_summaries, interval_df = prepare(raw)
-            data_ok = True
-        else:
-            st.warning("No CSV files found in the SharePoint folder.")
-    except Exception as exc:
-        st.error(f"SharePoint connection failed: {exc}")
-        st.info(
-            "Check that `.streamlit/secrets.toml` contains valid credentials. "
-            "See `.streamlit/secrets.toml.example` for the required keys."
-        )
+    st.info("⬆️ Upload your CSV files from the sidebar to load the dashboard.")
 
 # ── Sidebar — export buttons & notes (only when data is ready) ───────────────
 if data_ok and not summary_df.empty:
