@@ -144,6 +144,37 @@ hr { border: none !important; border-top: 1px solid #d8e3ef !important; margin: 
 
 /* ── Caption text ───────────────────────────────── */
 .stCaption { color: #7b90a8 !important; font-size: 12px !important; }
+
+/* ── Sidebar file uploader ──────────────────────── */
+section[data-testid="stSidebar"] [data-testid="stFileUploader"] {
+    background: rgba(255,255,255,0.07) !important;
+    border-radius: 10px !important;
+    padding: 4px !important;
+}
+section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] {
+    background: rgba(255,255,255,0.06) !important;
+    border: 1.5px dashed rgba(255,215,0,0.45) !important;
+    border-radius: 8px !important;
+}
+section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzoneInstructions"] span,
+section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzoneInstructions"] p,
+section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] span,
+section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] p,
+section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] small {
+    color: #d0e4ff !important;
+    font-weight: 500 !important;
+}
+section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] button {
+    background: rgba(255,215,0,0.15) !important;
+    border: 1px solid rgba(255,215,0,0.5) !important;
+    color: #FFD700 !important;
+    border-radius: 6px !important;
+    font-weight: 600 !important;
+}
+section[data-testid="stSidebar"] .stCaption,
+section[data-testid="stSidebar"] [data-testid="stCaptionContainer"] {
+    color: #a0b8d8 !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
