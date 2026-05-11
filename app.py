@@ -193,6 +193,23 @@ def _ct_now() -> str:
     return f"Hertz Performance as of {hour} CT"
 
 
+def _data_as_of(interval_df: pd.DataFrame) -> str:
+    """Use the latest interval time from the data; fall back to system clock."""
+    if interval_df is None or interval_df.empty or "Interval" not in interval_df.columns:
+        return _ct_now()
+    valid = interval_df["Interval"].dropna()
+    valid = valid[valid != "N/A"]
+    if valid.empty:
+        return _ct_now()
+    latest = valid.max()  # "HH:MM" strings sort correctly lexicographically
+    try:
+        t = datetime.strptime(latest, "%H:%M")
+        hour_str = t.strftime("%I:%M%p").lstrip("0").replace(":00", "")
+        return f"Hertz Performance as of {hour_str} CT"
+    except Exception:
+        return _ct_now()
+
+
 def _fmt_seconds(val) -> str:
     """1-decimal seconds — used for ASA."""
     if pd.isna(val):
@@ -998,7 +1015,7 @@ st.markdown(
         </div>
         <div style='font-size:26px;font-weight:800;color:white;line-height:1.1;
                     letter-spacing:-0.5px'>
-          {_ct_now()}
+          {_data_as_of(interval_df)}
         </div>
       </div>
       <div style='display:flex;gap:6px;align-items:center'>
