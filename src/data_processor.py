@@ -15,7 +15,7 @@ _RAW_COLS = {
     "aht":                  "AHT",
     "abn":                  "ABN",
     "asa":                  "ASA",
-    "speedofanswer":        "ASA",        # alternate name
+    "speedofanswer":        "SpeedOfAnswer",  # keep total separate — used for ASA_w
 }
 
 # Canonical SkillName column candidates, in priority order (first match wins)
@@ -152,7 +152,12 @@ def prepare(raw: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
 
     # 5. Pre-compute weighted columns for aggregation
     df["AHT_w"] = df["NCH"] * df["AHT"]
-    df["ASA_w"] = df["NCH"] * df["ASA"]
+    # ASA_w: use SpeedOfAnswer total directly (includes abandoned-call wait time).
+    # NCH×ASA drops rows where NCH=0 but callers still waited before abandoning.
+    if "SpeedOfAnswer" in df.columns:
+        df["ASA_w"] = pd.to_numeric(df["SpeedOfAnswer"], errors="coerce").fillna(0)
+    else:
+        df["ASA_w"] = df["NCH"] * df["ASA"]
 
     # ── Helper: build summary with grand total for any subset of rows ──────────
     def _make_summary(sub: pd.DataFrame) -> pd.DataFrame:
