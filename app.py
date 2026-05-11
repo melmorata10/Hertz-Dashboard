@@ -193,8 +193,8 @@ def _ct_now() -> str:
     return f"Hertz Performance as of {hour} CT"
 
 
-def _data_as_of(interval_df: pd.DataFrame) -> str:
-    """Use the latest interval time from the data; fall back to system clock."""
+def _data_as_of(interval_df: pd.DataFrame, call_date: str = None) -> str:
+    """Use the latest interval time + call date from the data; fall back to system clock."""
     if interval_df is None or interval_df.empty or "Interval" not in interval_df.columns:
         return _ct_now()
     valid = interval_df["Interval"].dropna()
@@ -205,6 +205,13 @@ def _data_as_of(interval_df: pd.DataFrame) -> str:
     try:
         t = datetime.strptime(latest, "%H:%M")
         hour_str = t.strftime("%I:%M%p").lstrip("0").replace(":00", "")
+        if call_date:
+            try:
+                d = datetime.strptime(str(call_date), "%m/%d/%Y")
+                date_str = f"{d.strftime('%b')} {d.day}"  # e.g. "May 9"
+            except Exception:
+                date_str = str(call_date)
+            return f"Hertz Performance · {date_str} · {hour_str} CT"
         return f"Hertz Performance as of {hour_str} CT"
     except Exception:
         return _ct_now()
@@ -249,6 +256,21 @@ def _colour_aht_var(val):
 def _colour_row(row):
     styles = [""] * len(row)
     cols = list(row.index)
+
+    # AHT — same green/yellow/red as AHT Var%
+    if "AHT" in cols and "AHT Var%" in cols:
+        aht_var = row["AHT Var%"]
+        if pd.notna(aht_var):
+            idx = cols.index("AHT")
+            styles[idx] = _colour_aht_var(aht_var)
+    elif "AHT" in cols and "Target AHT" in cols:
+        aht, tgt = row["AHT"], row["Target AHT"]
+        if pd.notna(aht) and pd.notna(tgt) and tgt > 0:
+            var = (aht - tgt) / tgt * 100
+            idx = cols.index("AHT")
+            styles[idx] = _colour_aht_var(var)
+
+    # ABN% and ASA vs their targets
     for metric, target_col in (("ABN%", "Target ABN%"), ("ASA", "Target ASA")):
         if metric in cols and target_col in cols:
             val, tgt = row[metric], row[target_col]
@@ -951,11 +973,18 @@ summary_df = pd.DataFrame()
 vendor_summaries: dict = {}
 interval_df = pd.DataFrame()
 data_ok = False
+call_date: str = None
 
 if data_source == "📁 Upload CSV":
     if uploaded:
         raw = _load_from_uploads(uploaded)
         if not raw.empty:
+            # Extract latest CallDate for the header
+            if "CallDate" in raw.columns:
+                try:
+                    call_date = pd.to_datetime(raw["CallDate"], errors="coerce").max().strftime("%m/%d/%Y")
+                except Exception:
+                    call_date = None
             summary_df, vendor_summaries, interval_df = prepare(raw)
             data_ok = True
         else:
@@ -973,6 +1002,11 @@ else:  # SharePoint
                 raw = _sp_load()
                 st.session_state["sp_raw"] = True  # mark that we have data
                 if not raw.empty:
+                    if "CallDate" in raw.columns:
+                        try:
+                            call_date = pd.to_datetime(raw["CallDate"], errors="coerce").max().strftime("%m/%d/%Y")
+                        except Exception:
+                            call_date = None
                     summary_df, vendor_summaries, interval_df = prepare(raw)
                     data_ok = True
                 else:
@@ -1015,7 +1049,7 @@ st.markdown(
         </div>
         <div style='font-size:26px;font-weight:800;color:white;line-height:1.1;
                     letter-spacing:-0.5px'>
-          {_data_as_of(interval_df)}
+          {_data_as_of(interval_df, call_date)}
         </div>
       </div>
       <div style='display:flex;gap:6px;align-items:center'>
