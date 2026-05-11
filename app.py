@@ -8,6 +8,13 @@ import streamlit.components.v1 as components
 
 from src.data_processor import prepare
 
+# SharePoint connector (optional — only used when source toggle = SharePoint)
+try:
+    from src.sharepoint import load_all_csvs as _sp_load
+    _SP_AVAILABLE = True
+except ImportError:
+    _SP_AVAILABLE = False
+
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="Hertz Performance Dashboard",
@@ -882,14 +889,45 @@ with st.sidebar:
     )
     st.markdown("---")
 
-    st.markdown("### 📂 Upload Data")
-    uploaded = st.file_uploader(
-        "Upload one or more CSV files",
-        type="csv",
-        accept_multiple_files=True,
+    # ── Data source toggle ────────────────────────────────────────────────────
+    st.markdown("### 📂 Data Source")
+    data_source = st.radio(
+        "data_source",
+        options=["📁 Upload CSV", "☁️ SharePoint"],
+        index=0,
         label_visibility="collapsed",
     )
-    st.caption("Columns: SkillName, SupplierName, Interval, NCO, NCH, AHT, ABN, ASA")
+
+    uploaded = None
+    sp_load_clicked = False
+
+    if data_source == "📁 Upload CSV":
+        st.markdown("**Upload CSV files**")
+        uploaded = st.file_uploader(
+            "Upload one or more CSV files",
+            type="csv",
+            accept_multiple_files=True,
+            label_visibility="collapsed",
+        )
+        st.caption("Columns: SkillName, SupplierName, Interval, NCO, NCH, AHT, ABN, ASA")
+
+    else:  # SharePoint
+        st.markdown("**Load from SharePoint**")
+        _sp_secrets_ok = "sharepoint" in st.secrets if hasattr(st, "secrets") else False
+        if not _sp_secrets_ok:
+            st.warning(
+                "SharePoint credentials not configured.\n\n"
+                "Add a `[sharepoint]` section to your Streamlit secrets with:\n"
+                "`tenant_id`, `client_id`, `client_secret`, `site_hostname`, "
+                "`site_path`, `folder_path`",
+                icon="⚠️",
+            )
+        else:
+            sp_load_clicked = st.button(
+                "🔄 Load / Refresh from SharePoint",
+                use_container_width=True,
+            )
+            st.caption("Data is cached for 5 minutes. Click to force refresh.")
 
 # ── Load & process ────────────────────────────────────────────────────────────
 summary_df = pd.DataFrame()
@@ -897,15 +935,37 @@ vendor_summaries: dict = {}
 interval_df = pd.DataFrame()
 data_ok = False
 
-if uploaded:
-    raw = _load_from_uploads(uploaded)
-    if not raw.empty:
-        summary_df, vendor_summaries, interval_df = prepare(raw)
-        data_ok = True
+if data_source == "📁 Upload CSV":
+    if uploaded:
+        raw = _load_from_uploads(uploaded)
+        if not raw.empty:
+            summary_df, vendor_summaries, interval_df = prepare(raw)
+            data_ok = True
+        else:
+            st.warning("No data could be read from the uploaded files.")
     else:
-        st.warning("No data could be read from the uploaded files.")
-else:
-    st.info("⬆️ Upload your CSV files from the sidebar to load the dashboard.")
+        st.info("⬆️ Upload your CSV files from the sidebar to load the dashboard.")
+
+else:  # SharePoint
+    _sp_secrets_ok = "sharepoint" in st.secrets if hasattr(st, "secrets") else False
+    if _sp_secrets_ok:
+        if sp_load_clicked or "sp_raw" in st.session_state:
+            try:
+                if sp_load_clicked:
+                    _sp_load.clear()   # bust the @st.cache_data cache on manual refresh
+                raw = _sp_load()
+                st.session_state["sp_raw"] = True  # mark that we have data
+                if not raw.empty:
+                    summary_df, vendor_summaries, interval_df = prepare(raw)
+                    data_ok = True
+                else:
+                    st.warning("No CSV files found in the configured SharePoint folder.")
+            except Exception as exc:
+                st.error(f"SharePoint error: {exc}")
+        else:
+            st.info("☁️ Click **Load / Refresh from SharePoint** in the sidebar to fetch data.")
+    else:
+        st.info("☁️ Configure SharePoint credentials in Streamlit secrets to use this source.")
 
 # ── Sidebar — export buttons & notes (only when data is ready) ───────────────
 if data_ok and not summary_df.empty:
