@@ -948,6 +948,17 @@ with st.sidebar:
             accept_multiple_files=True,
             label_visibility="collapsed",
         )
+        # Persist uploaded bytes in session state so refreshes don't wipe the data
+        if uploaded:
+            st.session_state["stored_files"] = [
+                {"name": f.name, "data": f.read()} for f in uploaded
+            ]
+        # Clear button — only show when data is stored
+        if st.session_state.get("stored_files"):
+            if st.button("🗑️ Clear Data", use_container_width=True):
+                st.session_state.pop("stored_files", None)
+                st.session_state.pop("sp_raw", None)
+                st.rerun()
         st.caption("Columns: SkillName, SupplierName, Interval, NCO, NCH, AHT, ABN, ASA")
 
     else:  # SharePoint
@@ -976,10 +987,17 @@ data_ok = False
 call_date: str = None
 
 if data_source == "📁 Upload CSV":
-    if uploaded:
-        raw = _load_from_uploads(uploaded)
+    stored = st.session_state.get("stored_files")
+    if stored:
+        import io as _io
+        frames = []
+        for f in stored:
+            try:
+                frames.append(pd.read_csv(_io.BytesIO(f["data"])))
+            except Exception as e:
+                st.sidebar.warning(f"Could not read {f['name']}: {e}")
+        raw = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
         if not raw.empty:
-            # Extract latest CallDate for the header
             if "CallDate" in raw.columns:
                 try:
                     call_date = pd.to_datetime(raw["CallDate"], errors="coerce").max().strftime("%m/%d/%Y")
@@ -988,7 +1006,7 @@ if data_source == "📁 Upload CSV":
             summary_df, vendor_summaries, interval_df = prepare(raw)
             data_ok = True
         else:
-            st.warning("No data could be read from the uploaded files.")
+            st.warning("No data could be read from the stored files.")
     else:
         st.info("⬆️ Upload your CSV files from the sidebar to load the dashboard.")
 
