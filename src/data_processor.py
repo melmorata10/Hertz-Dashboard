@@ -168,15 +168,19 @@ def prepare(raw: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
         nco = int(sub["NCO"].sum())
         nch = int(sub["NCH"].sum())
         abn = int(sub["ABN"].sum())
+        gt_aht        = round(sub["AHT_w"].sum() / nch, 1) if nch > 0 else 0
+        gt_target_aht = round(agg["Target AHT"].mean(), 1)
+        gt_aht_var    = round((gt_aht - gt_target_aht) / gt_target_aht * 100, 1) if gt_target_aht else None
+        gt_target_abn = round(agg["Target ABN%"].mean(), 2)
         gt = pd.DataFrame([{
             "LOB":         "Grand Total",
             "NCO":         nco,
             "NCH":         nch,
-            "AHT":         round(sub["AHT_w"].sum() / nch, 1) if nch > 0 else 0,
-            "Target AHT":  round(agg["Target AHT"].mean(), 1),
-            "AHT Var%":    None,
+            "AHT":         gt_aht,
+            "Target AHT":  gt_target_aht,
+            "AHT Var%":    gt_aht_var,
             "ABN":         abn,
-            "Target ABN%": None,
+            "Target ABN%": gt_target_abn,
             "ABN%":        round(abn / nco * 100, 2) if nco > 0 else 0,
             "Target ASA":  round(agg["Target ASA"].mean(), 1),
             "ASA":         round(sub["ASA_w"].sum() / nch, 1) if nch > 0 else 0,
