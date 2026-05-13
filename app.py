@@ -1082,6 +1082,24 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# ── Refresh warning banner (only when data is loaded) ────────────────────────
+if data_ok:
+    st.markdown(
+        """
+        <div style='background:rgba(255,193,7,0.12); border:1px solid rgba(255,193,7,0.4);
+                    border-left:4px solid #FFD700; border-radius:8px;
+                    padding:10px 16px; margin-bottom:12px;
+                    display:flex; align-items:center; gap:10px'>
+          <span style='font-size:18px'>⚠️</span>
+          <span style='font-size:13px; color:#5a4200; font-weight:500'>
+            <strong>Do not refresh the page</strong> — uploaded data will be lost.
+            Use the <strong>🗑️ Clear Data</strong> button in the sidebar to reset the dashboard.
+          </span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
 tab1, tab2 = st.tabs(["📊 Voice Performance Summary", "⏱️ Per Interval"])
 
 # ── Tab 1: Voice Performance Summary ─────────────────────────────────────────
