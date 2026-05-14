@@ -947,8 +947,99 @@ def _display_summary(df: pd.DataFrame, table_key: str = "main"):
 
 
 @st.dialog("📊 Performance by Line of Business", width="large")
-def _summary_dialog(df: pd.DataFrame, table_key: str):
-    _display_summary(df, table_key)
+def _summary_dialog(df: pd.DataFrame):
+    """Render full table as static HTML — no internal scroll, screenshot-ready."""
+    df = df.copy()
+    df["Analysis"] = df.apply(_abn_driver_brief, axis=1)
+
+    gt   = df[df["LOB"] == "Grand Total"]
+    lobs = df[df["LOB"] != "Grand Total"].sort_values("NCO", ascending=False)
+    df   = pd.concat([lobs, gt], ignore_index=True)
+
+    display_cols = ["LOB", "NCO", "NCH", "Target AHT", "AHT", "AHT Var%",
+                    "ABN", "Target ABN%", "ABN%", "Target ASA", "ASA", "Analysis"]
+    present = [c for c in display_cols if c in df.columns]
+
+    HDR_BG    = "#1a3a5c"
+    TOTAL_BG  = "#cce8e8"
+    GREEN_BG  = "#C8F0C8"; GREEN_FG  = "#1a5e1a"
+    YELLOW_BG = "#FFF4CC"; YELLOW_FG = "#7a5c00"
+    RED_BG    = "#FFD0D0"; RED_FG    = "#8b0000"
+
+    def _cell_color(col, val, row):
+        if pd.isna(val):
+            return None, None
+        if col == "AHT Var%":
+            if val <= 0:  return GREEN_BG,  GREEN_FG
+            if val <= 5:  return YELLOW_BG, YELLOW_FG
+            return RED_BG, RED_FG
+        if col in ("ABN%", "ASA"):
+            tgt_col = "Target ABN%" if col == "ABN%" else "Target ASA"
+            tgt = row.get(tgt_col, float("nan"))
+            if pd.notna(tgt):
+                if val <= tgt:        return GREEN_BG,  GREEN_FG
+                if val <= tgt * 1.1:  return YELLOW_BG, YELLOW_FG
+                return RED_BG, RED_FG
+        return None, None
+
+    def _fmt_cell(col, val):
+        if col in ("Target AHT", "AHT"):               return _fmt_seconds_int(val)
+        if col in ("Target ASA", "ASA"):               return _fmt_seconds(val)
+        if col in ("AHT Var%", "ABN%", "Target ABN%"): return _fmt_pct(val)
+        if col in ("NCO", "NCH", "ABN"):               return _fmt_int(val)
+        if col == "Analysis":                          return str(val) if val else ""
+        return str(val) if pd.notna(val) else "—"
+
+    ths = "".join(
+        f'<th style="background:{HDR_BG};color:white;padding:6px 10px;'
+        f'border:1px solid #667;white-space:nowrap;font-size:12px;font-weight:700">'
+        f'{"Analysis / Notes" if c == "Analysis" else c}</th>'
+        for c in present
+    )
+    rows_html = [f"<tr>{ths}</tr>"]
+
+    for _, row in df.iterrows():
+        is_total = str(row.get("LOB", "")) == "Grand Total"
+        base_bg  = TOTAL_BG if is_total else "white"
+        fw       = "bold"   if is_total else "normal"
+        tds = []
+        for col in present:
+            val = row.get(col, float("nan"))
+            if col == "Analysis":
+                raw_val = str(val) if val else ""
+                bg, fg = None, None
+            else:
+                try:
+                    raw_val = float(val)
+                except (TypeError, ValueError):
+                    raw_val = float("nan")
+                bg, fg = _cell_color(col, raw_val, row) if not is_total else (None, None)
+            cell_bg = bg or base_bg
+            cell_fg = fg or "inherit"
+            align   = "left" if col in ("LOB", "Analysis") else "center"
+            fmt_val = _fmt_cell(col, val)
+            tds.append(
+                f'<td style="background:{cell_bg};color:{cell_fg};padding:5px 9px;'
+                f'border:1px solid #dde;text-align:{align};font-weight:{fw};'
+                f'font-size:12px;white-space:nowrap">{fmt_val}</td>'
+            )
+        rows_html.append(f"<tr>{''.join(tds)}</tr>")
+
+    table_html = (
+        '<div style="overflow-x:auto">'
+        '<table style="border-collapse:collapse;font-family:Inter,Arial,sans-serif;width:100%">'
+        + "".join(rows_html)
+        + "</table></div>"
+    )
+    st.markdown(table_html, unsafe_allow_html=True)
+    st.markdown(
+        "<div style='font-size:0.78em;margin-top:10px;display:flex;gap:10px;flex-wrap:wrap'>"
+        "<span style='background:#C8F0C8;padding:2px 8px;border-radius:10px;color:#1a5e1a;font-weight:600'>■ At / below target</span>"
+        "<span style='background:#FFF4CC;padding:2px 8px;border-radius:10px;color:#7a5c00;font-weight:600'>■ Within 10% of target</span>"
+        "<span style='background:#FFD0D0;padding:2px 8px;border-radius:10px;color:#8b0000;font-weight:600'>■ Exceeds target</span>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
 
 
 def _style_interval(df: pd.DataFrame):
@@ -1409,7 +1500,7 @@ with tab1:
         with btn_col:
             st.markdown("<div style='padding-top:8px'></div>", unsafe_allow_html=True)
             if st.button("⛶", key="fs_main", help="Expand table to full screen", use_container_width=True):
-                _summary_dialog(_main_df, "main_fs")
+                _summary_dialog(_main_df)
 
         _display_summary(_main_df, table_key="main")
 
