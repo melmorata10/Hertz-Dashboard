@@ -1,5 +1,4 @@
 import io
-import os
 import subprocess
 import sys
 from datetime import date, timedelta
@@ -236,6 +235,15 @@ with st.sidebar:
     st.caption("Enter your Verint credentials before extracting.")
     sidebar_username = st.text_input("Username", value="", key="vc_user")
     sidebar_password = st.text_input("Password", value="", type="password", key="vc_pass")
+
+    st.markdown("---")
+    st.markdown("### ⚙️ Options")
+    _show_browser = st.checkbox(
+        "Show browser window",
+        value=True,
+        help="Uncheck to run silently in the background (headless). "
+             "Keep checked to watch the extraction happen live.",
+    )
 
     st.markdown("---")
 
@@ -490,8 +498,7 @@ if run_btn or range_btn:
         progress_bar.progress(0.0, text=msg)
 
     try:
-        _headless = os.getenv("STREAMLIT_SHARING_MODE") == "true" or os.getenv("HOME") == "/home/appuser"
-        scraper = ConversocialScraper(headless=_headless)
+        scraper = ConversocialScraper(headless=not _show_browser)
         new_df = scraper.run(
             platforms=platforms_sel,
             queues=queues_sel,
