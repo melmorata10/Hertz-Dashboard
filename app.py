@@ -1006,18 +1006,22 @@ def _summary_dialog(df: pd.DataFrame, table_key: str):
         if col == "Analysis":                          return str(val) if val else ""
         return str(val) if pd.notna(val) else "—"
 
-    left_cols = {"LOB", "Analysis"}
-    col_labels = {"Analysis": "Analysis / Notes"}
+    # Dialog-specific widths sized to fit ~820px dialog with no horizontal scroll.
+    # LOB=95, 10 metrics=53px each (uniform), Analysis=155 → total≈780px
+    _DLG_W = {
+        "LOB": 95, "NCO": 53, "NCH": 53,
+        "Target AHT": 53, "AHT": 53, "AHT Var%": 53,
+        "ABN": 53, "Target ABN%": 53, "ABN%": 53,
+        "Target ASA": 53, "ASA": 53, "Analysis": 155,
+    }
+    left_cols   = {"LOB", "Analysis"}
+    col_labels  = {"Analysis": "Analysis / Notes"}
 
-    cols_html = "".join(
-        f'<col style="width:{_COL_WIDTHS.get(c, 80)}px;min-width:{_COL_WIDTHS.get(c, 80)}px">'
-        for c in present
-    )
+    cols_html = "".join(f'<col style="width:{_DLG_W.get(c, 53)}px">' for c in present)
     ths = "".join(
-        f'<th style="background:{HDR_BG};color:white;padding:6px 10px;'
-        f'border:1px solid #667;white-space:nowrap;font-size:12px;font-weight:700;'
-        f'text-align:{"left" if c in left_cols else "center"};'
-        f'width:{_COL_WIDTHS.get(c, 80)}px">'
+        f'<th style="background:{HDR_BG};color:white;padding:5px 6px;'
+        f'border:1px solid #667;font-size:11px;font-weight:700;'
+        f'text-align:{"left" if c in left_cols else "center"}">'
         f'{col_labels.get(c, c)}</th>'
         for c in present
     )
@@ -1031,7 +1035,6 @@ def _summary_dialog(df: pd.DataFrame, table_key: str):
         for col in present:
             val = row.get(col, float("nan"))
             if col == "Analysis":
-                raw_val = str(val) if val else ""
                 bg, fg = None, None
             else:
                 try:
@@ -1044,16 +1047,17 @@ def _summary_dialog(df: pd.DataFrame, table_key: str):
             align   = "left" if col in left_cols else "center"
             fmt_val = _fmt_cell(col, val)
             tds.append(
-                f'<td style="background:{cell_bg};color:{cell_fg};padding:5px 9px;'
+                f'<td style="background:{cell_bg};color:{cell_fg};padding:4px 6px;'
                 f'border:1px solid #dde;text-align:{align};font-weight:{fw};'
-                f'font-size:12px;white-space:nowrap;width:{_COL_WIDTHS.get(col, 80)}px">'
+                f'font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
                 f'{fmt_val}</td>'
             )
         rows_html.append(f"<tr>{''.join(tds)}</tr>")
 
     table_html = (
-        '<div style="overflow-x:auto">'
-        f'<table style="border-collapse:collapse;font-family:Inter,Arial,sans-serif;table-layout:fixed">'
+        '<div style="overflow:hidden;width:100%">'
+        '<table style="border-collapse:collapse;font-family:Inter,Arial,sans-serif;'
+        'table-layout:fixed;width:100%">'
         f'<colgroup>{cols_html}</colgroup>'
         + "".join(rows_html)
         + "</table></div>"
@@ -1105,24 +1109,21 @@ def _interval_dialog(df: pd.DataFrame):
         if col in ("NCO", "NCH", "ABN"):               return _fmt_int(val)
         return str(val) if pd.notna(val) else "—"
 
+    # Interval: 52px, LOB: 85px, Vendor: 55px, 10 metrics: 53px → total≈718px
     _iv_widths = {
-        "Interval": 80, "LOB": 140, "Vendor": 80,
-        "NCO": 80, "NCH": 80,
-        "Target AHT": 80, "AHT": 80, "AHT Var%": 80,
-        "ABN": 80, "Target ABN%": 80, "ABN%": 80,
-        "Target ASA": 80, "ASA": 80,
+        "Interval": 52, "LOB": 85, "Vendor": 55,
+        "NCO": 53, "NCH": 53,
+        "Target AHT": 53, "AHT": 53, "AHT Var%": 53,
+        "ABN": 53, "Target ABN%": 53, "ABN%": 53,
+        "Target ASA": 53, "ASA": 53,
     }
     left_cols_iv = {"LOB", "Vendor", "Interval"}
 
-    cols_html = "".join(
-        f'<col style="width:{_iv_widths.get(c, 80)}px;min-width:{_iv_widths.get(c, 80)}px">'
-        for c in present
-    )
+    cols_html = "".join(f'<col style="width:{_iv_widths.get(c, 53)}px">' for c in present)
     ths = "".join(
-        f'<th style="background:{HDR_BG};color:white;padding:6px 10px;'
-        f'border:1px solid #667;white-space:nowrap;font-size:12px;font-weight:700;'
-        f'text-align:{"left" if c in left_cols_iv else "center"};'
-        f'width:{_iv_widths.get(c, 80)}px">{c}</th>'
+        f'<th style="background:{HDR_BG};color:white;padding:5px 6px;'
+        f'border:1px solid #667;font-size:11px;font-weight:700;'
+        f'text-align:{"left" if c in left_cols_iv else "center"}">{c}</th>'
         for c in present
     )
     rows_html = [f"<tr>{ths}</tr>"]
@@ -1139,16 +1140,17 @@ def _interval_dialog(df: pd.DataFrame):
             cell_fg = fg or "inherit"
             align = "left" if col in left_cols_iv else "center"
             tds.append(
-                f'<td style="background:{cell_bg};color:{cell_fg};padding:5px 9px;'
-                f'border:1px solid #dde;text-align:{align};font-size:12px;white-space:nowrap;'
-                f'width:{_iv_widths.get(col, 80)}px">'
+                f'<td style="background:{cell_bg};color:{cell_fg};padding:4px 6px;'
+                f'border:1px solid #dde;text-align:{align};font-size:11px;'
+                f'overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
                 f'{_fmt_cell(col, val)}</td>'
             )
         rows_html.append(f"<tr>{''.join(tds)}</tr>")
 
     st.markdown(
-        '<div style="overflow-x:auto">'
-        f'<table style="border-collapse:collapse;font-family:Inter,Arial,sans-serif;table-layout:fixed">'
+        '<div style="overflow:hidden;width:100%">'
+        '<table style="border-collapse:collapse;font-family:Inter,Arial,sans-serif;'
+        'table-layout:fixed;width:100%">'
         f'<colgroup>{cols_html}</colgroup>'
         + "".join(rows_html)
         + "</table></div>",
