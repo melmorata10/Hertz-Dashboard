@@ -1,9 +1,24 @@
 import io
+import os
+import subprocess
+import sys
 from datetime import date, timedelta
 
 import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
+
+
+@st.cache_resource(show_spinner="Installing browser (first run only)…")
+def _install_playwright_browser() -> None:
+    """Install Chromium binaries on first run — needed on Streamlit Cloud."""
+    subprocess.run(
+        [sys.executable, "-m", "playwright", "install", "chromium"],
+        capture_output=True,
+    )
+
+
+_install_playwright_browser()
 
 st.set_page_config(
     page_title="Verint Social Media — Hertz",
@@ -456,7 +471,8 @@ if run_btn or range_btn:
         progress_bar.progress(0.0, text=msg)
 
     try:
-        scraper = ConversocialScraper(headless=False)
+        _headless = os.getenv("STREAMLIT_SHARING_MODE") == "true" or os.getenv("HOME") == "/home/appuser"
+        scraper = ConversocialScraper(headless=_headless)
         new_df = scraper.run(
             platforms=platforms_sel,
             queues=queues_sel,
