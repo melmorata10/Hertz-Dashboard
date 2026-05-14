@@ -9,7 +9,7 @@ module.exports = async (req, res) => {
     const buf = Buffer.from(rawBody, 'base64');
     const key = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
     await put(`reports/${key}.bin`, buf, {
-      access: 'public',
+      access: 'private',
       addRandomSuffix: false,
       token: process.env.BLOB_READ_WRITE_TOKEN
     });
