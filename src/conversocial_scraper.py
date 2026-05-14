@@ -278,16 +278,13 @@ class ConversocialScraper:
                 page.wait_for_load_state("networkidle", timeout=30_000)
                 return
             except Exception as e:
-                Path(".streamlit/debug_login_err.txt").write_text(str(e), encoding="utf-8")
-                page.screenshot(path=".streamlit/debug_login_fail.png")
-                # Fall through to manual login
-
-        if on_status:
-            on_status("🔐 Auto-login failed. Please check your credentials in the sidebar and try again.")
-        page.wait_for_function(
-            "() => window.location.href.includes('conversocial.com') && !window.location.href.includes('/login')",
-            timeout=180_000,
-        )
+                err_msg = str(e)
+                Path(".streamlit/debug_login_err.txt").write_text(err_msg, encoding="utf-8")
+                try:
+                    page.screenshot(path=".streamlit/debug_login_fail.png")
+                except Exception:
+                    pass
+                raise RuntimeError(f"Auto-login failed: {err_msg[:300]}")
         page.wait_for_load_state("networkidle", timeout=30_000)
 
     def _open_analytics(self, page: "Page", on_status: Callable | None = None) -> "Frame":
