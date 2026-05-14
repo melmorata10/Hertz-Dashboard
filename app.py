@@ -829,18 +829,18 @@ def _summary_to_html_table(df: pd.DataFrame) -> str:
 
 
 _COL_WIDTHS = {
-    "LOB":         180,
-    "NCO":          70,
-    "NCH":          70,
-    "Target AHT":   82,
-    "AHT":          70,
-    "AHT Var%":     76,
-    "ABN":          65,
-    "Target ABN%":  90,
-    "ABN%":         65,
-    "Target ASA":   82,
-    "ASA":          65,
-    "Analysis":    320,
+    "LOB":         160,
+    "NCO":          80,
+    "NCH":          80,
+    "Target AHT":   80,
+    "AHT":          80,
+    "AHT Var%":     80,
+    "ABN":          80,
+    "Target ABN%":  80,
+    "ABN%":         80,
+    "Target ASA":   80,
+    "ASA":          80,
+    "Analysis":    500,
 }
 
 # LOBs hidden from all tabs — Grand Total row is always kept
@@ -944,6 +944,11 @@ def _display_summary(df: pd.DataFrame, table_key: str = "main"):
         key=f"editor_{table_key}",
         num_rows="fixed",
     )
+
+
+@st.dialog("📊 Performance by Line of Business", width="large")
+def _summary_dialog(df: pd.DataFrame, table_key: str):
+    _display_summary(df, table_key)
 
 
 def _style_interval(df: pd.DataFrame):
@@ -1394,13 +1399,19 @@ with tab1:
         _kpi_cards(summary_df)
         st.markdown("<div style='margin-top:20px'></div>", unsafe_allow_html=True)
 
-        st.subheader("Performance by Line of Business")
-        _display_summary(
-            summary_df[
-                (summary_df["LOB"] == "Grand Total") | (~summary_df["LOB"].isin(_HIDDEN_LOBS))
-            ].reset_index(drop=True),
-            table_key="main",
-        )
+        _main_df = summary_df[
+            (summary_df["LOB"] == "Grand Total") | (~summary_df["LOB"].isin(_HIDDEN_LOBS))
+        ].reset_index(drop=True)
+
+        hdr_col, btn_col = st.columns([9, 1])
+        with hdr_col:
+            st.subheader("Performance by Line of Business")
+        with btn_col:
+            st.markdown("<div style='padding-top:8px'></div>", unsafe_allow_html=True)
+            if st.button("⛶", key="fs_main", help="Expand table to full screen", use_container_width=True):
+                _summary_dialog(_main_df, "main_fs")
+
+        _display_summary(_main_df, table_key="main")
 
         st.markdown(
             """
