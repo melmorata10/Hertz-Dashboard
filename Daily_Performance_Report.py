@@ -17,171 +17,375 @@ except ImportError:
 
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="Hertz Performance Dashboard",
+    page_title="Daily Performance Report",
     page_icon="🚗",
     layout="wide",
 )
 
-# ── Global theme ─────────────────────────────────────────────────────────────
+# Move sidebar logo above nav links
+components.html("""
+<script>
+(function() {
+    function reorder() {
+        try {
+            var doc = window.parent.document;
+            var nav = doc.querySelector('[data-testid="stSidebarNav"]');
+            var uc  = doc.querySelector('[data-testid="stSidebarUserContent"]');
+            if (nav && uc && uc.compareDocumentPosition(nav) & 4) {
+                uc.parentNode.insertBefore(nav, uc);
+            }
+        } catch(e) {}
+    }
+    reorder();
+    setTimeout(reorder, 300);
+    setTimeout(reorder, 900);
+})();
+</script>
+""", height=0)
+
+# ── Global theme — Premium v2 ─────────────────────────────────────────────────
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
 
-/* ── Base ───────────────────────────────────────── */
-html, body, .stApp { font-family: 'Inter', sans-serif !important; }
-.stApp { background: #eef2f7; }
-
-/* ── Sidebar ────────────────────────────────────── */
-section[data-testid="stSidebar"] {
-    background: linear-gradient(175deg, #0a1628 0%, #112244 50%, #0f2d4a 100%) !important;
-    border-right: 2px solid rgba(255,215,0,0.4);
-    box-shadow: 4px 0 24px rgba(0,0,0,0.35);
+/* ══ Keyframe Animations ══════════════════════════════════════════════════ */
+@keyframes gradientShift {
+    0%   { background-position: 0% 50%; }
+    50%  { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
 }
+@keyframes glowPulse {
+    0%,100% { box-shadow: 0 2px 12px rgba(0,0,0,0.07), 0 0 0 0 rgba(255,215,0,0); }
+    50%      { box-shadow: 0 8px 28px rgba(0,0,0,0.13), 0 0 22px rgba(255,215,0,0.16); }
+}
+@keyframes shimmerSweep {
+    0%   { transform: translateX(-120%); }
+    100% { transform: translateX(280%); }
+}
+@keyframes fadeSlideIn {
+    from { opacity: 0; transform: translateY(14px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes pulseDot {
+    0%,100% { opacity: 1;   transform: scale(1);    box-shadow: 0 0 0 0 rgba(74,222,128,0.6); }
+    50%      { opacity: 0.7; transform: scale(0.88); box-shadow: 0 0 0 5px rgba(74,222,128,0); }
+}
+@keyframes sidebarFlow {
+    0%   { background-position: 0% 0%; }
+    100% { background-position: 0% 100%; }
+}
+@keyframes navEntrance {
+    from { opacity: 0; transform: translateX(-12px); }
+    to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes particleDrift {
+    0%   { background-position: 0 0; }
+    100% { background-position: 48px 48px; }
+}
+@keyframes borderBeam {
+    0%,100% { opacity: 0.6; }
+    50%      { opacity: 1; }
+}
+@keyframes headerBeam {
+    0%   { left: -60%; }
+    100% { left: 140%; }
+}
+
+/* ══ Base ═════════════════════════════════════════════════════════════════ */
+html, body, .stApp { font-family: 'Inter', sans-serif !important; }
+.stApp {
+    background: linear-gradient(135deg, #e6ecf5 0%, #eef2f8 50%, #e3edf6 100%) !important;
+}
+/* Subtle animated dot grid across the whole page */
+.stApp::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: radial-gradient(circle, rgba(26,58,92,0.055) 1px, transparent 1px);
+    background-size: 28px 28px;
+    animation: particleDrift 18s linear infinite;
+    pointer-events: none;
+    z-index: 0;
+}
+
+/* ══ Sidebar ══════════════════════════════════════════════════════════════ */
+section[data-testid="stSidebar"] {
+    background: linear-gradient(180deg,
+        #040c18 0%, #07111f 15%, #0a1628 35%,
+        #112244 60%, #0f2d4a 80%, #07111f 100%) !important;
+    background-size: 100% 300% !important;
+    animation: sidebarFlow 14s ease-in-out infinite alternate !important;
+    border-right: 2px solid rgba(255,215,0,0.45) !important;
+    box-shadow: 4px 0 36px rgba(0,0,0,0.5) !important;
+}
+
+/* ── Sidebar Nav Links ────────────────────────────────────────────────── */
+[data-testid="stSidebarNav"] {
+    padding: 2px 10px 14px !important;
+}
+[data-testid="stSidebarNav"]::before {
+    content: "NAVIGATION";
+    display: block;
+    font-size: 9.5px;
+    font-weight: 800;
+    letter-spacing: 2.5px;
+    color: rgba(255,215,0,0.55);
+    padding: 10px 6px 8px;
+    font-family: 'Inter', sans-serif;
+    text-transform: uppercase;
+}
+[data-testid="stSidebarNav"] a {
+    display: flex !important;
+    align-items: center !important;
+    margin: 4px 0 !important;
+    padding: 12px 14px 12px 18px !important;
+    border-radius: 10px !important;
+    border: 1px solid rgba(255,215,0,0.1) !important;
+    background: rgba(255,255,255,0.04) !important;
+    text-decoration: none !important;
+    transition: all 0.22s ease !important;
+    animation: navEntrance 0.4s ease both !important;
+    position: relative !important;
+    overflow: hidden !important;
+}
+/* Gold left accent bar */
+[data-testid="stSidebarNav"] a::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 15%; bottom: 15%;
+    width: 3px;
+    border-radius: 0 3px 3px 0;
+    background: rgba(255,215,0,0.25);
+    transition: all 0.22s ease;
+}
+/* Shimmer on hover */
+[data-testid="stSidebarNav"] a::after {
+    content: '';
+    position: absolute;
+    top: 0; left: -80%;
+    width: 50%; height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,215,0,0.06), transparent);
+    transition: left 0.4s ease;
+}
+[data-testid="stSidebarNav"] a:hover {
+    background: rgba(255,215,0,0.09) !important;
+    border-color: rgba(255,215,0,0.32) !important;
+    transform: translateX(5px) !important;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.25), inset 0 0 20px rgba(255,215,0,0.03) !important;
+}
+[data-testid="stSidebarNav"] a:hover::before { background: #FFD700; box-shadow: 0 0 10px rgba(255,215,0,0.7); }
+[data-testid="stSidebarNav"] a:hover::after  { left: 140%; }
+[data-testid="stSidebarNav"] a[aria-current="page"] {
+    background: linear-gradient(90deg, rgba(255,215,0,0.13), rgba(255,215,0,0.06)) !important;
+    border-color: rgba(255,215,0,0.42) !important;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.22), 0 0 24px rgba(255,215,0,0.06) !important;
+}
+[data-testid="stSidebarNav"] a[aria-current="page"]::before {
+    background: #FFD700;
+    box-shadow: 0 0 12px rgba(255,215,0,0.8);
+}
+[data-testid="stSidebarNav"] a li,
+[data-testid="stSidebarNav"] a span,
+[data-testid="stSidebarNav"] ul li span {
+    color: #ccddf8 !important;
+    font-weight: 600 !important;
+    font-size: 13.5px !important;
+    letter-spacing: 0.2px !important;
+}
+[data-testid="stSidebarNav"] a[aria-current="page"] li,
+[data-testid="stSidebarNav"] a[aria-current="page"] span {
+    color: #FFD700 !important;
+    text-shadow: 0 0 14px rgba(255,215,0,0.45) !important;
+}
+
+/* ── Sidebar text ─────────────────────────────────────────────────────── */
 section[data-testid="stSidebar"] label,
 section[data-testid="stSidebar"] p,
 section[data-testid="stSidebar"] span,
 section[data-testid="stSidebar"] div,
 section[data-testid="stSidebar"] caption,
-section[data-testid="stSidebar"] small { color: #e2eeff !important; }
+section[data-testid="stSidebar"] small { color: #c0d4ee !important; }
 section[data-testid="stSidebar"] .stRadio label,
-section[data-testid="stSidebar"] .stFileUploader label { color: #f0f6ff !important; font-weight: 500 !important; }
+section[data-testid="stSidebar"] .stFileUploader label { color: #dceeff !important; font-weight: 500 !important; }
 section[data-testid="stSidebar"] .stMarkdown h3 {
     color: #FFD700 !important;
-    font-size: 12px !important;
-    font-weight: 700 !important;
-    letter-spacing: 1.5px !important;
+    font-size: 10px !important;
+    font-weight: 800 !important;
+    letter-spacing: 2.2px !important;
     text-transform: uppercase !important;
-    border-bottom: 1px solid rgba(255,215,0,0.2);
+    border-bottom: 1px solid rgba(255,215,0,0.18);
     padding-bottom: 6px;
     margin-bottom: 10px;
 }
-section[data-testid="stSidebar"] hr { border-color: rgba(255,255,255,0.08) !important; }
+section[data-testid="stSidebar"] hr { border-color: rgba(255,255,255,0.06) !important; }
 section[data-testid="stSidebar"] .stDownloadButton button,
 section[data-testid="stSidebar"] .stButton button {
-    background: linear-gradient(135deg, #FFD700 0%, #f5b800 100%) !important;
+    background: linear-gradient(135deg, #FFD700 0%, #f5c400 55%, #e8b000 100%) !important;
     color: #0a1628 !important;
-    font-weight: 700 !important;
+    font-weight: 800 !important;
     border: none !important;
-    border-radius: 8px !important;
+    border-radius: 10px !important;
     width: 100% !important;
-    transition: all 0.2s ease !important;
-    box-shadow: 0 2px 8px rgba(255,215,0,0.3) !important;
+    transition: all 0.25s ease !important;
+    box-shadow: 0 3px 14px rgba(255,215,0,0.38), 0 1px 4px rgba(0,0,0,0.22) !important;
+    letter-spacing: 0.3px !important;
 }
 section[data-testid="stSidebar"] .stDownloadButton button:hover,
 section[data-testid="stSidebar"] .stButton button:hover {
-    transform: translateY(-1px) !important;
-    box-shadow: 0 4px 14px rgba(255,215,0,0.45) !important;
+    transform: translateY(-2px) !important;
+    box-shadow: 0 7px 22px rgba(255,215,0,0.52), 0 2px 6px rgba(0,0,0,0.25) !important;
 }
 
-/* ── Tabs ───────────────────────────────────────── */
+/* ══ Tabs ═════════════════════════════════════════════════════════════════ */
 .stTabs [data-baseweb="tab-list"] {
     background: transparent;
-    border-bottom: 2px solid #d0dae8;
-    gap: 2px;
+    border-bottom: 2px solid rgba(200,215,235,0.85);
+    gap: 4px;
     padding: 0;
 }
 .stTabs [data-baseweb="tab"] {
-    color: #6b7e99 !important;
+    color: #7a90aa !important;
     font-weight: 600 !important;
     font-size: 14px !important;
-    padding: 10px 24px !important;
-    border-radius: 8px 8px 0 0 !important;
+    padding: 11px 26px !important;
+    border-radius: 10px 10px 0 0 !important;
     border: 1px solid transparent !important;
     border-bottom: none !important;
     background: transparent !important;
-    transition: all 0.18s ease !important;
+    transition: all 0.2s ease !important;
 }
-.stTabs [data-baseweb="tab"]:hover { color: #1a3a5c !important; background: rgba(26,58,92,0.06) !important; }
+.stTabs [data-baseweb="tab"]:hover {
+    color: #1a3a5c !important;
+    background: rgba(26,58,92,0.07) !important;
+}
 .stTabs [aria-selected="true"] {
     background: white !important;
-    color: #1a3a5c !important;
-    border-color: #d0dae8 !important;
+    color: #0a1628 !important;
+    font-weight: 700 !important;
+    border-color: rgba(200,215,235,0.9) !important;
     border-bottom-color: white !important;
     margin-bottom: -2px !important;
+    box-shadow: inset 0 -3px 0 #FFD700 !important;
 }
 .stTabs [data-baseweb="tab-panel"] {
     background: white;
-    border: 1px solid #d0dae8;
+    border: 1px solid rgba(200,215,235,0.8);
     border-top: none;
-    border-radius: 0 8px 8px 8px;
-    padding: 24px;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+    border-radius: 0 10px 10px 10px;
+    padding: 28px;
+    box-shadow: 0 8px 36px rgba(0,0,0,0.07);
+    animation: fadeSlideIn 0.32s ease;
 }
 
-/* ── Headings ───────────────────────────────────── */
-h3 { color: #0f2d4a !important; font-weight: 700 !important; }
-h4 { color: #1a3a5c !important; font-weight: 600 !important;
-     border-left: 3px solid #FFD700; padding-left: 10px; }
+/* ══ Headings ════════════════════════════════════════════════════════════ */
+h3 { color: #0a1628 !important; font-weight: 800 !important; letter-spacing: -0.3px !important; }
+h4 { color: #1a3a5c !important; font-weight: 700 !important;
+     border-left: 3px solid #FFD700; padding-left: 12px; }
 
-/* ── KPI metric cards ───────────────────────────── */
+/* ══ KPI metric cards ════════════════════════════════════════════════════ */
 div[data-testid="metric-container"] {
-    background: white;
-    border-radius: 12px;
-    padding: 16px 20px 14px;
-    border: 1px solid #e2eaf4;
+    background: linear-gradient(145deg, #ffffff 0%, #f8fbff 100%);
+    border-radius: 14px;
+    padding: 18px 22px 16px;
+    border: 1px solid rgba(205,218,238,0.8);
     border-top: 3px solid #FFD700;
     box-shadow: 0 2px 12px rgba(0,0,0,0.06);
-    transition: box-shadow 0.2s ease;
+    transition: all 0.28s ease;
+    animation: glowPulse 4.5s ease-in-out infinite;
+    position: relative;
+    overflow: hidden;
 }
-div[data-testid="metric-container"]:hover { box-shadow: 0 6px 20px rgba(0,0,0,0.1); }
+/* Shimmer sweep across each card */
+div[data-testid="metric-container"]::after {
+    content: '';
+    position: absolute;
+    top: 0; left: -80%;
+    width: 55%; height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,215,0,0.07), transparent);
+    animation: shimmerSweep 6s ease-in-out infinite;
+}
+div[data-testid="metric-container"]:hover {
+    transform: translateY(-4px) scale(1.01) !important;
+    box-shadow: 0 14px 36px rgba(0,0,0,0.12), 0 0 0 2px rgba(255,215,0,0.35) !important;
+    border-top-color: #ffe552 !important;
+    animation: none !important;
+}
 div[data-testid="metric-container"] [data-testid="stMetricLabel"] {
-    font-size: 12px !important; font-weight: 600 !important;
-    color: #6b7e99 !important; text-transform: uppercase; letter-spacing: 0.8px;
+    font-size: 11px !important; font-weight: 700 !important;
+    color: #7a90aa !important; text-transform: uppercase; letter-spacing: 1.1px;
 }
 div[data-testid="metric-container"] [data-testid="stMetricValue"] {
-    font-size: 26px !important; font-weight: 800 !important; color: #0f2d4a !important;
+    font-size: 28px !important; font-weight: 900 !important;
+    color: #0a1628 !important; letter-spacing: -0.5px !important; line-height: 1.1 !important;
 }
-div[data-testid="metric-container"] [data-testid="stMetricDelta"] { font-size: 12px !important; }
+div[data-testid="metric-container"] [data-testid="stMetricDelta"] { font-size: 12px !important; font-weight: 500 !important; }
 
-/* ── Dataframe / data-editor ────────────────────── */
-.stDataFrame, .stDataEditor { border-radius: 10px !important; box-shadow: 0 2px 12px rgba(0,0,0,0.06) !important; }
+/* ══ Table / data-editor ═════════════════════════════════════════════════ */
+.stDataFrame, .stDataEditor {
+    border-radius: 12px !important;
+    box-shadow: 0 4px 22px rgba(0,0,0,0.07) !important;
+    border: 1px solid rgba(205,218,238,0.7) !important;
+    overflow: hidden !important;
+}
 
-/* ── Expander ───────────────────────────────────── */
-details { border: 1px solid #d0dae8 !important; border-radius: 10px !important; overflow: hidden; }
-details[open] summary { border-bottom: 1px solid #d0dae8; }
+/* ══ Expander ════════════════════════════════════════════════════════════ */
+details { border: 1px solid rgba(200,215,235,0.8) !important; border-radius: 12px !important; overflow: hidden; transition: all 0.2s ease; }
+details[open] summary { border-bottom: 1px solid rgba(200,215,235,0.7); }
 summary {
-    background: linear-gradient(90deg,#eef3f9 0%,#f5f8fc 100%) !important;
-    font-weight: 600 !important; color: #1a3a5c !important;
-    padding: 12px 16px !important; border-radius: 10px !important;
+    background: linear-gradient(90deg, #edf3fb 0%, #f5f9fd 100%) !important;
+    font-weight: 700 !important; color: #1a3a5c !important;
+    padding: 14px 18px !important; border-radius: 12px !important; letter-spacing: 0.1px !important;
 }
-summary:hover { background: linear-gradient(90deg,#e4ecf6 0%,#eef3f9 100%) !important; }
+summary:hover { background: linear-gradient(90deg, #e1edf8 0%, #eaf3fc 100%) !important; }
 
-/* ── Dividers ───────────────────────────────────── */
-hr { border: none !important; border-top: 1px solid #d8e3ef !important; margin: 18px 0 !important; }
+/* ══ Dividers ════════════════════════════════════════════════════════════ */
+hr {
+    border: none !important;
+    height: 1px !important;
+    background: linear-gradient(90deg, transparent, #bfcfe4, transparent) !important;
+    margin: 22px 0 !important;
+}
 
-/* ── Caption text ───────────────────────────────── */
-.stCaption { color: #7b90a8 !important; font-size: 12px !important; }
+/* ══ Caption ═════════════════════════════════════════════════════════════ */
+.stCaption { color: #8099b8 !important; font-size: 12px !important; }
 
-/* ── Sidebar file uploader ──────────────────────── */
+/* ══ Alert boxes ═════════════════════════════════════════════════════════ */
+.stAlert { border-radius: 10px !important; animation: fadeSlideIn 0.35s ease !important; }
+
+/* ══ Sidebar file uploader ═══════════════════════════════════════════════ */
 section[data-testid="stSidebar"] [data-testid="stFileUploader"] {
-    background: rgba(255,255,255,0.07) !important;
-    border-radius: 10px !important;
-    padding: 4px !important;
+    background: rgba(255,255,255,0.05) !important; border-radius: 10px !important; padding: 4px !important;
 }
 section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] {
-    background: rgba(255,255,255,0.06) !important;
-    border: 1.5px dashed rgba(255,215,0,0.45) !important;
-    border-radius: 8px !important;
+    background: rgba(255,255,255,0.04) !important;
+    border: 1.5px dashed rgba(255,215,0,0.38) !important;
+    border-radius: 8px !important; transition: all 0.22s ease !important;
+}
+section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"]:hover {
+    border-color: rgba(255,215,0,0.62) !important;
+    background: rgba(255,215,0,0.03) !important;
 }
 section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzoneInstructions"] span,
 section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzoneInstructions"] p,
 section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] span,
 section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] p,
 section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] small {
-    color: #d0e4ff !important;
-    font-weight: 500 !important;
+    color: #a8c8ea !important; font-weight: 500 !important;
 }
 section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] button {
-    background: rgba(255,215,0,0.15) !important;
-    border: 1px solid rgba(255,215,0,0.5) !important;
-    color: #FFD700 !important;
-    border-radius: 6px !important;
-    font-weight: 600 !important;
+    background: rgba(255,215,0,0.12) !important;
+    border: 1px solid rgba(255,215,0,0.42) !important;
+    color: #FFD700 !important; border-radius: 6px !important; font-weight: 600 !important;
+    transition: all 0.2s ease !important;
+}
+section[data-testid="stSidebar"] [data-testid="stFileUploaderDropzone"] button:hover {
+    background: rgba(255,215,0,0.2) !important;
 }
 section[data-testid="stSidebar"] .stCaption,
-section[data-testid="stSidebar"] [data-testid="stCaptionContainer"] {
-    color: #a0b8d8 !important;
-}
+section[data-testid="stSidebar"] [data-testid="stCaptionContainer"] { color: #7aaacb !important; }
+
+/* ══ Entrance animation on all main content blocks ═══════════════════════ */
+section.main > div > div > div > div > div { animation: fadeSlideIn 0.4s ease both; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -608,6 +812,9 @@ _COL_WIDTHS = {
     "Analysis":    320,
 }
 
+# LOBs hidden from all tabs — Grand Total row is always kept
+_HIDDEN_LOBS = {"OPERATIONS"}
+
 
 def _kpi_cards(df: pd.DataFrame):
     """Four headline KPI metric tiles from the Grand Total row."""
@@ -906,20 +1113,29 @@ def _load_from_uploads(files) -> pd.DataFrame:
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
-    # Branding — CSS-rendered Hertz logo (no external dependency)
     st.markdown(
         """
-        <div style='text-align:center; padding:18px 0 10px'>
-          <div style='display:inline-block; background:#FFD700;
-                      padding:7px 22px; border-radius:5px;
-                      box-shadow:0 3px 12px rgba(255,215,0,0.4)'>
+        <style>
+        @keyframes logoPulse {
+            0%,100% { box-shadow: 0 4px 18px rgba(255,215,0,0.45), 0 0 0 0 rgba(255,215,0,0.2); }
+            50%      { box-shadow: 0 6px 26px rgba(255,215,0,0.65), 0 0 18px rgba(255,215,0,0.18); }
+        }
+        @keyframes subtitleShift {
+            0%,100% { color: rgba(255,215,0,0.65); }
+            50%      { color: rgba(255,215,0,0.95); }
+        }
+        </style>
+        <div style='text-align:center; padding:22px 0 12px'>
+          <div style='display:inline-block; background:linear-gradient(135deg,#FFD700 0%,#f5c400 60%,#e8b000 100%);
+                      padding:8px 26px; border-radius:7px;
+                      animation:logoPulse 3s ease-in-out infinite;'>
             <span style='font-family:Arial Black,Impact,sans-serif;
-                         font-size:26px; font-weight:900; color:#1a1a1a;
-                         letter-spacing:2px; line-height:1'>HERTZ</span>
+                         font-size:28px; font-weight:900; color:#0a1220;
+                         letter-spacing:3px; line-height:1'>HERTZ</span>
           </div>
-          <div style='font-size:9px; color:rgba(255,215,0,0.7);
-                      letter-spacing:3px; margin-top:8px;
-                      text-transform:uppercase; font-weight:600'>
+          <div style='font-size:9px; letter-spacing:3.5px; margin-top:10px;
+                      text-transform:uppercase; font-weight:700;
+                      animation:subtitleShift 3s ease-in-out infinite;'>
             Powered by Callinsite
           </div>
         </div>
@@ -1054,28 +1270,77 @@ if data_ok and not summary_df.empty:
 # ── Header ────────────────────────────────────────────────────────────────────
 st.markdown(
     f"""
-    <div style='background:linear-gradient(120deg,#0a1628 0%,#1a3a5c 60%,#1d4675 100%);
-                padding:20px 32px; border-radius:14px; margin-bottom:16px;
-                border-bottom:3px solid #FFD700;
-                box-shadow:0 6px 28px rgba(10,22,40,0.28);
-                display:flex; align-items:center; justify-content:space-between'>
+    <style>
+    @keyframes hdrGradient {{
+        0%   {{ background-position: 0% 50%; }}
+        50%  {{ background-position: 100% 50%; }}
+        100% {{ background-position: 0% 50%; }}
+    }}
+    @keyframes hdrBeam {{
+        0%   {{ left: -55%; opacity: 0; }}
+        15%  {{ opacity: 1; }}
+        85%  {{ opacity: 1; }}
+        100% {{ left: 130%; opacity: 0; }}
+    }}
+    @keyframes livePulse {{
+        0%,100% {{ box-shadow: 0 0 0 0 rgba(74,222,128,0.55); }}
+        50%      {{ box-shadow: 0 0 0 5px rgba(74,222,128,0); }}
+    }}
+    .hdr-wrap {{
+        background: linear-gradient(-50deg, #040d1a, #0a1628, #193860, #1d4675, #112244, #040d1a);
+        background-size: 350% 350%;
+        animation: hdrGradient 10s ease infinite;
+        padding: 22px 36px;
+        border-radius: 16px;
+        margin-bottom: 18px;
+        border-bottom: 3px solid #FFD700;
+        box-shadow: 0 8px 36px rgba(6,16,34,0.38), 0 2px 8px rgba(0,0,0,0.2);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        position: relative;
+        overflow: hidden;
+    }}
+    .hdr-beam {{
+        position: absolute;
+        top: 0; left: -55%;
+        width: 40%; height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(255,215,0,0.06), rgba(255,255,255,0.04), transparent);
+        animation: hdrBeam 7s ease-in-out infinite;
+        pointer-events: none;
+    }}
+    .hdr-eyebrow {{
+        font-size: 10px; color: #FFD700; font-weight: 800;
+        letter-spacing: 2.8px; text-transform: uppercase;
+        margin-bottom: 5px; opacity: 0.92;
+    }}
+    .hdr-title {{
+        font-size: 27px; font-weight: 900; color: white;
+        line-height: 1.1; letter-spacing: -0.6px;
+    }}
+    .live-badge {{
+        display: flex; align-items: center; gap: 8px;
+        background: rgba(255,215,0,0.12);
+        border: 1px solid rgba(255,215,0,0.35);
+        border-radius: 10px; padding: 7px 16px;
+        font-size: 12px; color: #FFD700; font-weight: 700; letter-spacing: 1px;
+    }}
+    .live-dot {{
+        width: 8px; height: 8px; border-radius: 50%;
+        background: #4ade80;
+        animation: livePulse 2s ease-in-out infinite;
+        flex-shrink: 0;
+    }}
+    </style>
+    <div class="hdr-wrap">
+      <div class="hdr-beam"></div>
       <div>
-        <div style='font-size:10px;color:#FFD700;font-weight:800;
-                    letter-spacing:2.5px;text-transform:uppercase;margin-bottom:4px;
-                    opacity:0.9'>
-          Hertz &nbsp;·&nbsp; Powered by Callinsite
-        </div>
-        <div style='font-size:26px;font-weight:800;color:white;line-height:1.1;
-                    letter-spacing:-0.5px'>
-          {_data_as_of(interval_df, call_date)}
-        </div>
+        <div class="hdr-eyebrow">Hertz &nbsp;·&nbsp; Powered by Callinsite</div>
+        <div class="hdr-title">{_data_as_of(interval_df, call_date)}</div>
       </div>
-      <div style='display:flex;gap:6px;align-items:center'>
-        <div style='background:rgba(255,215,0,0.15);border:1px solid rgba(255,215,0,0.35);
-                    border-radius:8px;padding:6px 14px;font-size:12px;
-                    color:#FFD700;font-weight:600;letter-spacing:0.5px'>
-          LIVE
-        </div>
+      <div class="live-badge">
+        <div class="live-dot"></div>
+        LIVE
       </div>
     </div>
     """,
@@ -1086,12 +1351,12 @@ st.markdown(
 if data_ok:
     st.markdown(
         """
-        <div style='background:rgba(255,193,7,0.12); border:1px solid rgba(255,193,7,0.4);
-                    border-left:4px solid #FFD700; border-radius:8px;
-                    padding:10px 16px; margin-bottom:12px;
-                    display:flex; align-items:center; gap:10px'>
-          <span style='font-size:18px'>⚠️</span>
-          <span style='font-size:13px; color:#5a4200; font-weight:500'>
+        <div style='background:rgba(255,193,7,0.1); border:1px solid rgba(255,193,7,0.35);
+                    border-left:4px solid #FFD700; border-radius:10px;
+                    padding:11px 18px; margin-bottom:14px;
+                    display:flex; align-items:center; gap:12px'>
+          <span style='font-size:17px'>⚠️</span>
+          <span style='font-size:13px; color:#5a4200; font-weight:500; line-height:1.4'>
             <strong>Do not refresh the page</strong> — uploaded data will be lost.
             Use the <strong>🗑️ Clear Data</strong> button in the sidebar to reset the dashboard.
           </span>
@@ -1110,7 +1375,12 @@ with tab1:
         st.markdown("<div style='margin-top:20px'></div>", unsafe_allow_html=True)
 
         st.subheader("Performance by Line of Business")
-        _display_summary(summary_df, table_key="main")
+        _display_summary(
+            summary_df[
+                (summary_df["LOB"] == "Grand Total") | (~summary_df["LOB"].isin(_HIDDEN_LOBS))
+            ].reset_index(drop=True),
+            table_key="main",
+        )
 
         st.markdown(
             """
@@ -1133,7 +1403,10 @@ with tab1:
         st.markdown("---")
 
         # ── Abandon Rate Analysis ──────────────────────────────────────────────
-        _display_abn_analysis(summary_df, interval_df=interval_df)
+        _display_abn_analysis(
+            summary_df[~summary_df["LOB"].isin(_HIDDEN_LOBS)],
+            interval_df=interval_df,
+        )
 
         # ── Per-vendor tables ──────────────────────────────────────────────────
         if vendor_summaries:
@@ -1145,6 +1418,10 @@ with tab1:
             for vendor in vendors_to_show:
                 st.markdown(f"#### {vendor}")
                 vdf = vendor_summaries[vendor]
+                # Hide LOBs in _HIDDEN_LOBS (keep Grand Total)
+                vdf = vdf[
+                    (vdf["LOB"] == "Grand Total") | (~vdf["LOB"].isin(_HIDDEN_LOBS))
+                ].reset_index(drop=True)
                 # HERTZ: suppress LOB rows that have no calls yet (NCO = 0 / blank)
                 if vendor == "HERTZ":
                     mask = (vdf["LOB"] == "Grand Total") | (vdf["NCO"].fillna(0) > 0)
@@ -1157,7 +1434,7 @@ with tab2:
     if data_ok and not interval_df.empty:
         all_lobs = sorted(
             l for l in interval_df["LOB"].unique()
-            if l not in ("Unknown", "", None)
+            if l not in ("Unknown", "", None) and l not in _HIDDEN_LOBS
         )
         all_vendors = sorted(
             v for v in interval_df["Vendor"].unique()
