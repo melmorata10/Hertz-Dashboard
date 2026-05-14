@@ -223,6 +223,12 @@ section[data-testid="stSidebar"] {
     letter-spacing: 0.2px;
 }
 
+/* ── Always-visible fullscreen toolbar on tables ─────────────────────── */
+[data-testid="stElementToolbar"] {
+    opacity: 1 !important;
+    visibility: visible !important;
+}
+
 /* ── Sidebar text ─────────────────────────────────────────────────────── */
 section[data-testid="stSidebar"] label,
 section[data-testid="stSidebar"] p,
@@ -884,19 +890,12 @@ def _display_summary(df: pd.DataFrame, table_key: str = "main"):
     lobs = df[df["LOB"] != "Grand Total"].sort_values("NCO", ascending=False)
     df   = pd.concat([lobs, gt], ignore_index=True)
 
-    # Session-state key for per-LOB user edits on this table
-    skey = f"analysis_{table_key}"
-    if skey not in st.session_state:
-        st.session_state[skey] = {}
-
-    # Build Analysis column: use saved user text if present, else auto-generate
+    # Always use auto-generated Analysis as the stable base — data_editor stores
+    # user edits as diffs on top of this base, so they persist across reruns as
+    # long as the base data doesn't change (no manual skey pre-fill that would
+    # cause data_editor to see "new" data and drop the diff state).
     df = df.copy()
-    df["Analysis"] = df.apply(
-        lambda row: st.session_state[skey].get(
-            str(row.get("LOB", "")), _abn_driver_brief(row)
-        ),
-        axis=1,
-    )
+    df["Analysis"] = df.apply(_abn_driver_brief, axis=1)
 
     present = [c for c in display_cols if c in df.columns]
     view    = df[present].copy()
@@ -933,9 +932,9 @@ def _display_summary(df: pd.DataFrame, table_key: str = "main"):
             col_cfg[c] = st.column_config.TextColumn(c, width=w)
 
     disabled_cols = [c for c in present if c != "Analysis"]
-    _row_h = 36  # px per row including header
+    _row_h = 36
     _tbl_h = (len(view) + 1) * _row_h + 4
-    result = st.data_editor(
+    st.data_editor(
         styled,
         column_config=col_cfg,
         disabled=disabled_cols,
@@ -945,13 +944,6 @@ def _display_summary(df: pd.DataFrame, table_key: str = "main"):
         key=f"editor_{table_key}",
         num_rows="fixed",
     )
-
-    # Persist any edits the user made in the Analysis column
-    if result is not None and "LOB" in result.columns and "Analysis" in result.columns:
-        for _, row in result.iterrows():
-            lob = str(row.get("LOB", ""))
-            if lob:
-                st.session_state[skey][lob] = str(row.get("Analysis", ""))
 
 
 def _style_interval(df: pd.DataFrame):
