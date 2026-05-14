@@ -39,18 +39,15 @@ components.html("""
     function renameAppLabel() {
         try {
             var doc = window.parent.document;
-            var links = doc.querySelectorAll('[data-testid="stSidebarNav"] a');
-            links.forEach(function(link) {
-                var href = link.getAttribute('href') || '';
-                if (href === '/' || href === '/app' || href.endsWith('/app')) {
-                    var els = link.querySelectorAll('span, li, p, div');
-                    els.forEach(function(el) {
-                        if (el.children.length === 0 && el.textContent.trim().toLowerCase() === 'app') {
-                            el.textContent = 'Daily Performance Dashboard';
-                        }
-                    });
+            var nav = doc.querySelector('[data-testid="stSidebarNav"]');
+            if (!nav) return;
+            var walker = doc.createTreeWalker(nav, NodeFilter.SHOW_TEXT, null, false);
+            var node;
+            while ((node = walker.nextNode())) {
+                if (node.textContent.trim() === 'app') {
+                    node.textContent = 'Daily Performance Dashboard';
                 }
-            });
+            }
         } catch(e) {}
     }
     function run() { reorder(); renameAppLabel(); }
