@@ -283,7 +283,7 @@ class ConversocialScraper:
                 # Fall through to manual login
 
         if on_status:
-            on_status("🔐 Please log in to Conversocial in the browser that just opened. The extraction will continue automatically once you're in.")
+            on_status("🔐 Auto-login failed. Please check your credentials in the sidebar and try again.")
         page.wait_for_function(
             "() => window.location.href.includes('conversocial.com') && !window.location.href.includes('/login')",
             timeout=180_000,

@@ -392,7 +392,11 @@ if "accumulated_df" in st.session_state and not st.session_state["accumulated_df
 st.markdown("---")
 
 # ── Extract buttons ───────────────────────────────────────────────────────────
-_btn_disabled = not PLAYWRIGHT_OK or not platforms_sel
+_creds_ok = bool(sidebar_username and sidebar_password)
+_btn_disabled = not PLAYWRIGHT_OK or not platforms_sel or not _creds_ok
+
+if not _creds_ok:
+    st.info("Enter your Verint username and password in the sidebar to enable extraction.", icon="🔐")
 
 col_left, col_right = st.columns(2)
 with col_left:
