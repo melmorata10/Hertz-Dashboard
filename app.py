@@ -933,12 +933,15 @@ def _display_summary(df: pd.DataFrame, table_key: str = "main"):
             col_cfg[c] = st.column_config.TextColumn(c, width=w)
 
     disabled_cols = [c for c in present if c != "Analysis"]
+    _row_h = 36  # px per row including header
+    _tbl_h = (len(view) + 1) * _row_h + 4
     result = st.data_editor(
         styled,
         column_config=col_cfg,
         disabled=disabled_cols,
         hide_index=True,
         use_container_width=True,
+        height=_tbl_h,
         key=f"editor_{table_key}",
         num_rows="fixed",
     )
