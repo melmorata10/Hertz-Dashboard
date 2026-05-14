@@ -1006,10 +1006,19 @@ def _summary_dialog(df: pd.DataFrame, table_key: str):
         if col == "Analysis":                          return str(val) if val else ""
         return str(val) if pd.notna(val) else "—"
 
+    left_cols = {"LOB", "Analysis"}
+    col_labels = {"Analysis": "Analysis / Notes"}
+
+    cols_html = "".join(
+        f'<col style="width:{_COL_WIDTHS.get(c, 80)}px;min-width:{_COL_WIDTHS.get(c, 80)}px">'
+        for c in present
+    )
     ths = "".join(
         f'<th style="background:{HDR_BG};color:white;padding:6px 10px;'
-        f'border:1px solid #667;white-space:nowrap;font-size:12px;font-weight:700">'
-        f'{"Analysis / Notes" if c == "Analysis" else c}</th>'
+        f'border:1px solid #667;white-space:nowrap;font-size:12px;font-weight:700;'
+        f'text-align:{"left" if c in left_cols else "center"};'
+        f'width:{_COL_WIDTHS.get(c, 80)}px">'
+        f'{col_labels.get(c, c)}</th>'
         for c in present
     )
     rows_html = [f"<tr>{ths}</tr>"]
@@ -1032,18 +1041,20 @@ def _summary_dialog(df: pd.DataFrame, table_key: str):
                 bg, fg = _cell_color(col, raw_val, row) if not is_total else (None, None)
             cell_bg = bg or base_bg
             cell_fg = fg or "inherit"
-            align   = "left" if col in ("LOB", "Analysis") else "center"
+            align   = "left" if col in left_cols else "center"
             fmt_val = _fmt_cell(col, val)
             tds.append(
                 f'<td style="background:{cell_bg};color:{cell_fg};padding:5px 9px;'
                 f'border:1px solid #dde;text-align:{align};font-weight:{fw};'
-                f'font-size:12px;white-space:nowrap">{fmt_val}</td>'
+                f'font-size:12px;white-space:nowrap;width:{_COL_WIDTHS.get(col, 80)}px">'
+                f'{fmt_val}</td>'
             )
         rows_html.append(f"<tr>{''.join(tds)}</tr>")
 
     table_html = (
-        '<div style="overflow-x:visible">'
-        '<table style="border-collapse:collapse;font-family:Inter,Arial,sans-serif;width:100%;table-layout:auto">'
+        '<div style="overflow-x:auto">'
+        f'<table style="border-collapse:collapse;font-family:Inter,Arial,sans-serif;table-layout:fixed">'
+        f'<colgroup>{cols_html}</colgroup>'
         + "".join(rows_html)
         + "</table></div>"
     )
@@ -1094,9 +1105,24 @@ def _interval_dialog(df: pd.DataFrame):
         if col in ("NCO", "NCH", "ABN"):               return _fmt_int(val)
         return str(val) if pd.notna(val) else "—"
 
+    _iv_widths = {
+        "Interval": 80, "LOB": 140, "Vendor": 80,
+        "NCO": 80, "NCH": 80,
+        "Target AHT": 80, "AHT": 80, "AHT Var%": 80,
+        "ABN": 80, "Target ABN%": 80, "ABN%": 80,
+        "Target ASA": 80, "ASA": 80,
+    }
+    left_cols_iv = {"LOB", "Vendor", "Interval"}
+
+    cols_html = "".join(
+        f'<col style="width:{_iv_widths.get(c, 80)}px;min-width:{_iv_widths.get(c, 80)}px">'
+        for c in present
+    )
     ths = "".join(
         f'<th style="background:{HDR_BG};color:white;padding:6px 10px;'
-        f'border:1px solid #667;white-space:nowrap;font-size:12px;font-weight:700">{c}</th>'
+        f'border:1px solid #667;white-space:nowrap;font-size:12px;font-weight:700;'
+        f'text-align:{"left" if c in left_cols_iv else "center"};'
+        f'width:{_iv_widths.get(c, 80)}px">{c}</th>'
         for c in present
     )
     rows_html = [f"<tr>{ths}</tr>"]
@@ -1111,17 +1137,19 @@ def _interval_dialog(df: pd.DataFrame):
             bg, fg = _cell_color(col, num_val, row)
             cell_bg = bg or "white"
             cell_fg = fg or "inherit"
-            align = "left" if col in ("LOB", "Vendor", "Interval") else "center"
+            align = "left" if col in left_cols_iv else "center"
             tds.append(
                 f'<td style="background:{cell_bg};color:{cell_fg};padding:5px 9px;'
-                f'border:1px solid #dde;text-align:{align};font-size:12px;white-space:nowrap">'
+                f'border:1px solid #dde;text-align:{align};font-size:12px;white-space:nowrap;'
+                f'width:{_iv_widths.get(col, 80)}px">'
                 f'{_fmt_cell(col, val)}</td>'
             )
         rows_html.append(f"<tr>{''.join(tds)}</tr>")
 
     st.markdown(
-        '<div style="overflow-x:visible">'
-        '<table style="border-collapse:collapse;font-family:Inter,Arial,sans-serif;width:100%;table-layout:auto">'
+        '<div style="overflow-x:auto">'
+        f'<table style="border-collapse:collapse;font-family:Inter,Arial,sans-serif;table-layout:fixed">'
+        f'<colgroup>{cols_html}</colgroup>'
         + "".join(rows_html)
         + "</table></div>",
         unsafe_allow_html=True,
