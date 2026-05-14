@@ -252,29 +252,6 @@ yesterday_str = yesterday.strftime("%B %d, %Y")
 # Header date updates after buttons are rendered (session state tracks last run)
 header_date = st.session_state.get("last_extract_date", yesterday_str)
 
-# ── Platform & Queue filters (main pane) ─────────────────────────────────────
-col_plat, col_queue = st.columns([1, 1])
-with col_plat:
-    st.markdown("#### 📱 Platforms")
-    platforms_sel = st.multiselect(
-        "platforms",
-        options=ALL_PLATFORMS,
-        default=ALL_PLATFORMS,
-        label_visibility="collapsed",
-    )
-with col_queue:
-    st.markdown("#### 🗂️ Queues")
-    st.caption("One queue per line.")
-    queues_raw = st.text_area(
-        "queues",
-        value="\n".join(DEFAULT_QUEUES),
-        height=180,
-        label_visibility="collapsed",
-    )
-    queues_sel = [q.strip() for q in queues_raw.strip().splitlines() if q.strip()]
-
-st.markdown("---")
-
 st.markdown(
     f"""
     <div style='background:linear-gradient(120deg,#0a1628 0%,#1a3a5c 60%,#1d4675 100%);
@@ -294,7 +271,7 @@ st.markdown(
       <div style='background:rgba(255,215,0,0.15);border:1px solid rgba(255,215,0,0.35);
                   border-radius:8px;padding:6px 14px;font-size:12px;
                   color:#FFD700;font-weight:600;letter-spacing:0.5px'>
-        {len(platforms_sel)} PLATFORMS
+        VERINT
       </div>
     </div>
     """,
@@ -305,6 +282,49 @@ st.markdown(
     "Logs into Conversocial, loops through each selected platform, extracts all 10 metric cards "
     "and outputs an Excel file ready for tracking. **Takes ~2 min to run.**"
 )
+
+# ── Platform & Queue filters — styled card ────────────────────────────────────
+st.markdown(
+    """
+    <div style='background:#f8f9fc; border:1px solid #e2e8f0; border-radius:12px;
+                padding:20px 24px 4px; margin:16px 0 4px;
+                box-shadow:0 2px 8px rgba(0,0,0,0.05)'>
+      <div style='display:grid; grid-template-columns:1fr 1fr; gap:24px'>
+        <div>
+          <div style='font-size:11px; font-weight:700; letter-spacing:1.8px;
+                      text-transform:uppercase; color:#64748b; margin-bottom:10px'>
+            📱 Platforms
+          </div>
+        </div>
+        <div>
+          <div style='font-size:11px; font-weight:700; letter-spacing:1.8px;
+                      text-transform:uppercase; color:#64748b; margin-bottom:10px'>
+            🗂️ Queues &nbsp;<span style='font-weight:400;font-size:10px;letter-spacing:0'>one per line</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+col_plat, col_queue = st.columns([1, 1])
+with col_plat:
+    platforms_sel = st.multiselect(
+        "Platforms",
+        options=ALL_PLATFORMS,
+        default=ALL_PLATFORMS,
+        label_visibility="collapsed",
+    )
+with col_queue:
+    queues_raw = st.text_area(
+        "Queues",
+        value="\n".join(DEFAULT_QUEUES),
+        height=180,
+        label_visibility="collapsed",
+    )
+    queues_sel = [q.strip() for q in queues_raw.strip().splitlines() if q.strip()]
+
 st.markdown("---")
 
 # ── Persistent results (shown above extraction controls so they never get hidden) ──
