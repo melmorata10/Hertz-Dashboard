@@ -283,27 +283,22 @@ st.markdown(
     "and outputs an Excel file ready for tracking. **Takes ~2 min to run.**"
 )
 
-# ── Platform & Queue filters — styled card ────────────────────────────────────
+# ── Platform & Queue filters ──────────────────────────────────────────────────
 st.markdown(
     """
-    <div style='background:#f8f9fc; border:1px solid #e2e8f0; border-radius:12px;
-                padding:20px 24px 4px; margin:16px 0 4px;
-                box-shadow:0 2px 8px rgba(0,0,0,0.05)'>
-      <div style='display:grid; grid-template-columns:1fr 1fr; gap:24px'>
-        <div>
-          <div style='font-size:11px; font-weight:700; letter-spacing:1.8px;
-                      text-transform:uppercase; color:#64748b; margin-bottom:10px'>
-            📱 Platforms
-          </div>
-        </div>
-        <div>
-          <div style='font-size:11px; font-weight:700; letter-spacing:1.8px;
-                      text-transform:uppercase; color:#64748b; margin-bottom:10px'>
-            🗂️ Queues &nbsp;<span style='font-weight:400;font-size:10px;letter-spacing:0'>one per line</span>
-          </div>
-        </div>
-      </div>
-    </div>
+    <style>
+    /* Bordered filter boxes */
+    div[data-testid="stMultiSelect"] {
+        border: 1.5px solid #cbd5e1 !important;
+        border-radius: 10px !important;
+        padding: 10px 12px 6px !important;
+        background: #f8f9fc !important;
+    }
+    div[data-testid="stMultiSelect"]:focus-within {
+        border-color: #94a3b8 !important;
+        box-shadow: 0 0 0 3px rgba(148,163,184,0.15) !important;
+    }
+    </style>
     """,
     unsafe_allow_html=True,
 )
@@ -311,19 +306,16 @@ st.markdown(
 col_plat, col_queue = st.columns([1, 1])
 with col_plat:
     platforms_sel = st.multiselect(
-        "Platforms",
+        "📱 Platforms",
         options=ALL_PLATFORMS,
         default=ALL_PLATFORMS,
-        label_visibility="collapsed",
     )
 with col_queue:
-    queues_raw = st.text_area(
-        "Queues",
-        value="\n".join(DEFAULT_QUEUES),
-        height=180,
-        label_visibility="collapsed",
+    queues_sel = st.multiselect(
+        "🗂️ Queues",
+        options=DEFAULT_QUEUES,
+        default=DEFAULT_QUEUES,
     )
-    queues_sel = [q.strip() for q in queues_raw.strip().splitlines() if q.strip()]
 
 st.markdown("---")
 
