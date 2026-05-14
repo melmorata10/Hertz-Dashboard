@@ -232,26 +232,6 @@ with st.sidebar:
     )
     st.markdown("---")
 
-    st.markdown("### 📱 Platforms")
-    platforms_sel = st.multiselect(
-        "platforms",
-        options=ALL_PLATFORMS,
-        default=ALL_PLATFORMS,
-        label_visibility="collapsed",
-    )
-
-    st.markdown("### 🗂️ Queues")
-    st.caption("One queue per line — edit if platforms use different queues.")
-    queues_raw = st.text_area(
-        "queues",
-        value="\n".join(DEFAULT_QUEUES),
-        height=200,
-        label_visibility="collapsed",
-    )
-    queues_sel = [q.strip() for q in queues_raw.strip().splitlines() if q.strip()]
-
-    st.markdown("---")
-
     st.markdown("### 🔐 Verint Login")
     st.caption("Enter your Verint credentials before extracting.")
     sidebar_username = st.text_input("Username", value="", key="vc_user")
@@ -302,6 +282,29 @@ st.markdown(
     "Logs into Conversocial, loops through each selected platform, extracts all 10 metric cards "
     "and outputs an Excel file ready for tracking. **Takes ~2 min to run.**"
 )
+st.markdown("---")
+
+# ── Platform & Queue filters (main pane) ─────────────────────────────────────
+col_plat, col_queue = st.columns([1, 1])
+with col_plat:
+    st.markdown("#### 📱 Platforms")
+    platforms_sel = st.multiselect(
+        "platforms",
+        options=ALL_PLATFORMS,
+        default=ALL_PLATFORMS,
+        label_visibility="collapsed",
+    )
+with col_queue:
+    st.markdown("#### 🗂️ Queues")
+    st.caption("One queue per line.")
+    queues_raw = st.text_area(
+        "queues",
+        value="\n".join(DEFAULT_QUEUES),
+        height=180,
+        label_visibility="collapsed",
+    )
+    queues_sel = [q.strip() for q in queues_raw.strip().splitlines() if q.strip()]
+
 st.markdown("---")
 
 # ── Persistent results (shown above extraction controls so they never get hidden) ──
