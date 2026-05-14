@@ -22,7 +22,7 @@ st.set_page_config(
     layout="wide",
 )
 
-# Move sidebar logo above nav links
+# Move sidebar logo above nav links + rename "app" nav label
 components.html("""
 <script>
 (function() {
@@ -36,9 +36,28 @@ components.html("""
             }
         } catch(e) {}
     }
-    reorder();
-    setTimeout(reorder, 300);
-    setTimeout(reorder, 900);
+    function renameAppLabel() {
+        try {
+            var doc = window.parent.document;
+            var links = doc.querySelectorAll('[data-testid="stSidebarNav"] a');
+            links.forEach(function(link) {
+                var href = link.getAttribute('href') || '';
+                if (href === '/' || href === '/app' || href.endsWith('/app')) {
+                    var els = link.querySelectorAll('span, li, p, div');
+                    els.forEach(function(el) {
+                        if (el.children.length === 0 && el.textContent.trim().toLowerCase() === 'app') {
+                            el.textContent = 'Daily Performance Dashboard';
+                        }
+                    });
+                }
+            });
+        } catch(e) {}
+    }
+    function run() { reorder(); renameAppLabel(); }
+    run();
+    setTimeout(run, 300);
+    setTimeout(run, 900);
+    setTimeout(run, 2000);
 })();
 </script>
 """, height=0)
