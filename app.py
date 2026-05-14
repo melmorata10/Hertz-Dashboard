@@ -962,6 +962,13 @@ def _merge_editor_edits(df: pd.DataFrame, table_key: str) -> pd.DataFrame:
 @st.dialog("📊 Performance by Line of Business", width="large")
 def _summary_dialog(df: pd.DataFrame, table_key: str):
     """Render full table as static HTML — no internal scroll, screenshot-ready."""
+    # Force dialog to 92vw so Analysis column shows fully
+    st.markdown("""
+    <style>
+    div[role="dialog"] { max-width: 92vw !important; width: 92vw !important; }
+    </style>
+    """, unsafe_allow_html=True)
+
     df = df.copy()
     df["Analysis"] = df.apply(_abn_driver_brief, axis=1)
 
@@ -1006,13 +1013,13 @@ def _summary_dialog(df: pd.DataFrame, table_key: str):
         if col == "Analysis":                          return str(val) if val else ""
         return str(val) if pd.notna(val) else "—"
 
-    # Dialog-specific widths sized to fit ~820px dialog with no horizontal scroll.
-    # LOB=95, 10 metrics=53px each (uniform), Analysis=155 → total≈780px
+    # Proportional widths for table-layout:fixed;width:100% at 92vw.
+    # LOB=130, 10 metrics=72px each (uniform), Analysis=450 → ratios preserved at full width.
     _DLG_W = {
-        "LOB": 95, "NCO": 53, "NCH": 53,
-        "Target AHT": 53, "AHT": 53, "AHT Var%": 53,
-        "ABN": 53, "Target ABN%": 53, "ABN%": 53,
-        "Target ASA": 53, "ASA": 53, "Analysis": 155,
+        "LOB": 130, "NCO": 72, "NCH": 72,
+        "Target AHT": 72, "AHT": 72, "AHT Var%": 72,
+        "ABN": 72, "Target ABN%": 72, "ABN%": 72,
+        "Target ASA": 72, "ASA": 72, "Analysis": 450,
     }
     left_cols   = {"LOB", "Analysis"}
     col_labels  = {"Analysis": "Analysis / Notes"}
@@ -1076,6 +1083,12 @@ def _summary_dialog(df: pd.DataFrame, table_key: str):
 @st.dialog("⏱️ 30-Minute Interval Breakdown", width="large")
 def _interval_dialog(df: pd.DataFrame):
     """Render interval table as static HTML — no internal scroll, screenshot-ready."""
+    st.markdown("""
+    <style>
+    div[role="dialog"] { max-width: 92vw !important; width: 92vw !important; }
+    </style>
+    """, unsafe_allow_html=True)
+
     display_cols = ["Interval", "LOB", "Vendor", "NCO", "NCH",
                     "Target AHT", "AHT", "AHT Var%",
                     "ABN", "Target ABN%", "ABN%", "Target ASA", "ASA"]
@@ -1109,13 +1122,12 @@ def _interval_dialog(df: pd.DataFrame):
         if col in ("NCO", "NCH", "ABN"):               return _fmt_int(val)
         return str(val) if pd.notna(val) else "—"
 
-    # Interval: 52px, LOB: 85px, Vendor: 55px, 10 metrics: 53px → total≈718px
     _iv_widths = {
-        "Interval": 52, "LOB": 85, "Vendor": 55,
-        "NCO": 53, "NCH": 53,
-        "Target AHT": 53, "AHT": 53, "AHT Var%": 53,
-        "ABN": 53, "Target ABN%": 53, "ABN%": 53,
-        "Target ASA": 53, "ASA": 53,
+        "Interval": 65, "LOB": 120, "Vendor": 80,
+        "NCO": 72, "NCH": 72,
+        "Target AHT": 72, "AHT": 72, "AHT Var%": 72,
+        "ABN": 72, "Target ABN%": 72, "ABN%": 72,
+        "Target ASA": 72, "ASA": 72,
     }
     left_cols_iv = {"LOB", "Vendor", "Interval"}
 
