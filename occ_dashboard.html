@@ -814,6 +814,7 @@ function rebuildSlicerOptsFromCache() {
     populateSlicers();
     applySlicers();
     document.getElementById('dashboard').style.display = 'block';
+    document.getElementById('upload-btn-wrap').style.display = 'none';
     statusEl.textContent = '✓ Loaded from shared link';
     // Show the share panel with current URL so it can be re-shared
     const urlEl   = document.getElementById('share-url');
