@@ -275,9 +275,25 @@ class ConversocialScraper:
                     page.keyboard.press("Enter")
                 page.wait_for_timeout(2_500)
 
-                # Step 2: fill password and click/submit
-                page.wait_for_selector('input[type="password"]', timeout=15_000)
-                page.fill('input[type="password"]', password)
+                # Step 2: fill password — field may be hidden, use JS to bypass visibility
+                page.wait_for_selector(
+                    'input[type="password"], input[name="password"]',
+                    state="attached", timeout=15_000,
+                )
+                page.evaluate(
+                    """(pwd) => {
+                        const el = document.querySelector('input[type="password"], input[name="password"]');
+                        if (el) {
+                            el.removeAttribute('hidden');
+                            el.style.display = '';
+                            el.style.visibility = '';
+                            el.value = pwd;
+                            el.dispatchEvent(new Event('input',  {bubbles:true}));
+                            el.dispatchEvent(new Event('change', {bubbles:true}));
+                        }
+                    }""",
+                    password,
+                )
                 page.wait_for_timeout(600)
                 _submitted2 = False
                 for _sel in [
