@@ -195,7 +195,11 @@ class ConversocialScraper:
                 if on_status:
                     on_status(f"📅 Setting date filter to {date_str}…")
                 self._set_date_filter(looker, date_str)
-                looker.wait_for_timeout(3_000)  # let Looker re-query after date change
+                # Small settle; _apply_queues/_apply_platform both call _wait_for_looker_idle
+                looker.wait_for_timeout(500)
+
+                # Queue filter persists across platform changes — apply once per date
+                self._apply_queues(looker, queues)
 
                 for platform in platforms:
                     if on_progress:
@@ -203,7 +207,6 @@ class ConversocialScraper:
                     row: dict = {"Date": date_str, "Platform": platform}
                     try:
                         self._apply_platform(looker, platform)
-                        self._apply_queues(looker, queues)
                         self._wait_for_refresh(looker)
                         row.update(self._extract_cards(looker))
                     except Exception as exc:

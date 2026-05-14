@@ -198,6 +198,15 @@ section[data-testid="stSidebar"] {
     text-shadow: 0 0 14px rgba(255,215,0,0.45) !important;
 }
 
+/* ── Rename "app" nav label → "Daily Performance Report" ─────────────── */
+[data-testid="stSidebarNav"] a[href="/"] span { font-size: 0 !important; }
+[data-testid="stSidebarNav"] a[href="/"] span::after {
+    content: "Daily Performance Report";
+    font-size: 13.5px;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+}
+
 /* ── Sidebar text ─────────────────────────────────────────────────────── */
 section[data-testid="stSidebar"] label,
 section[data-testid="stSidebar"] p,
