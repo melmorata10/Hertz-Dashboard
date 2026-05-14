@@ -10,9 +10,7 @@ module.exports = async (req, res) => {
       token: process.env.BLOB_READ_WRITE_TOKEN
     });
     if (!blobs.length) { res.status(404).send('Report not found'); return; }
-    const response = await fetch(blobs[0].url, {
-      headers: { Authorization: `Bearer ${process.env.BLOB_READ_WRITE_TOKEN}` }
-    });
+    const response = await fetch(blobs[0].url);
     if (!response.ok) { res.status(404).send('Report not found'); return; }
     const data = await response.arrayBuffer();
     res.setHeader('Content-Type', 'application/octet-stream');
