@@ -1,0 +1,1626 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OCC IDP Dashboard</title>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+<style>
+/* ── Reset & base ───────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Segoe UI', Arial, sans-serif;
+  font-size: 13px;
+  background: #f2f5f9;
+  color: #1a2a38;
+  min-height: 100vh;
+}
+
+/* ── Header banner ──────────────────────────────────────────────────── */
+#header {
+  background: linear-gradient(135deg, #0d1f2d 0%, #0a3a55 60%, #005f80 100%);
+  padding: 18px 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+}
+#header-left h1 {
+  color: #fff;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+#header-left p {
+  color: #7ecfee;
+  font-size: 12px;
+  margin-top: 3px;
+}
+#header-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+#week-badge {
+  background: rgba(255,255,255,0.12);
+  border: 1px solid rgba(255,255,255,0.2);
+  color: #fff;
+  border-radius: 20px;
+  padding: 5px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  display: none;
+}
+#upload-btn-wrap { position: relative; }
+#file-input { display: none; }
+#upload-btn {
+  background: linear-gradient(135deg, #00bcd4, #0097a7);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(0,188,212,0.4);
+  transition: all 0.18s;
+  white-space: nowrap;
+}
+#upload-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0,188,212,0.5); }
+#upload-status { color: #7ecfee; font-size: 11px; margin-top: 4px; text-align: right; }
+#share-panel {
+  display: none;
+  margin-top: 8px;
+  background: rgba(255,255,255,0.12);
+  border: 1px solid rgba(255,255,255,0.25);
+  border-radius: 8px;
+  padding: 7px 10px;
+  align-items: center;
+  gap: 8px;
+}
+#share-url {
+  font-size: 11px;
+  color: #e0f7fa;
+  background: transparent;
+  border: none;
+  outline: none;
+  flex: 1;
+  min-width: 0;
+  cursor: text;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#copy-btn {
+  background: #00bcd4;
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+#copy-btn:hover { background: #0097a7; }
+#share-saving { color: #7ecfee; font-size: 11px; margin-top: 6px; display: none; }
+
+/* ── Main content ───────────────────────────────────────────────────── */
+#main { padding: 20px 28px; }
+
+/* ── Drop zone (empty state) ────────────────────────────────────────── */
+#drop-zone {
+  border: 2px dashed #b0c8dc;
+  border-radius: 16px;
+  background: #fff;
+  text-align: center;
+  padding: 80px 40px;
+  color: #7a96a8;
+  transition: all 0.2s;
+  cursor: pointer;
+}
+#drop-zone.drag-over { border-color: #00bcd4; background: #e8f8fb; color: #007a8c; }
+#drop-zone .icon { font-size: 52px; margin-bottom: 16px; }
+#drop-zone h2 { font-size: 18px; font-weight: 600; color: #3a5a70; margin-bottom: 8px; }
+#drop-zone p { font-size: 13px; }
+
+/* ── Dashboard (hidden until data loaded) ───────────────────────────── */
+#dashboard { display: none; }
+
+/* ── Slicers bar ────────────────────────────────────────────────────── */
+#slicers-bar {
+  background: #fff;
+  border: 1px solid #cddce8;
+  border-radius: 12px;
+  padding: 14px 20px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: flex-end;
+  gap: 20px;
+  flex-wrap: wrap;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
+.slicer-group { display: flex; flex-direction: column; gap: 5px; min-width: 180px; flex: 1; }
+.slicer-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: #0097a7;
+}
+.slicer-select {
+  border: 1.5px solid #b8d0e0;
+  border-radius: 7px;
+  padding: 6px 10px;
+  font-size: 12px;
+  background: #f7fbfd;
+  color: #1a2a38;
+  cursor: pointer;
+  outline: none;
+  transition: border 0.15s;
+}
+.slicer-select:focus { border-color: #00bcd4; background: #fff; }
+.slicer-hint { font-size: 10px; color: #99aabb; margin-top: 2px; }
+#reset-btn {
+  background: none;
+  border: 1.5px solid #cdd8e4;
+  border-radius: 7px;
+  padding: 7px 14px;
+  font-size: 12px;
+  color: #5a7a90;
+  cursor: pointer;
+  font-weight: 600;
+  white-space: nowrap;
+  align-self: flex-end;
+  transition: all 0.15s;
+}
+#reset-btn:hover { border-color: #00bcd4; color: #00bcd4; }
+
+/* ── Tabs ───────────────────────────────────────────────────────────── */
+.tab-bar {
+  display: flex;
+  gap: 4px;
+  border-bottom: 2px solid #cdd8e8;
+  margin-bottom: 0;
+}
+.tab-btn {
+  padding: 10px 24px;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
+  color: #6b87a0;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.tab-btn:hover { color: #0a4060; background: rgba(0,188,212,0.06); }
+.tab-btn.active {
+  background: #fff;
+  color: #005f80;
+  border-color: #cdd8e8;
+  border-bottom-color: #fff;
+  margin-bottom: -2px;
+}
+.tab-panel {
+  display: none;
+  background: #fff;
+  border: 1px solid #cdd8e8;
+  border-top: none;
+  border-radius: 0 8px 8px 8px;
+  padding: 20px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+}
+.tab-panel.active { display: block; }
+
+/* ── Table wrapper ──────────────────────────────────────────────────── */
+.table-wrap {
+  overflow-x: auto;
+  border-radius: 8px;
+  box-shadow: 0 1px 6px rgba(0,0,0,0.08);
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+thead th {
+  background: linear-gradient(180deg, #1a3a55 0%, #0d2d42 100%);
+  color: #fff;
+  font-weight: 700;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 10px 10px;
+  text-align: center;
+  white-space: nowrap;
+  border-right: 1px solid rgba(255,255,255,0.1);
+  position: sticky;
+  top: 0;
+}
+thead th:first-child { text-align: left; min-width: 220px; }
+thead th:last-child { border-right: none; }
+tbody tr { border-bottom: 1px solid #e8eef4; transition: background 0.1s; }
+tbody tr:hover { background: #f0f7fc !important; }
+tbody td {
+  padding: 8px 10px;
+  text-align: center;
+  white-space: nowrap;
+  border-right: 1px solid #e8eef4;
+}
+tbody td:first-child { text-align: left; border-right: 1px solid #d0dce8; }
+tbody td:last-child { border-right: none; }
+
+/* ── Channel (aggregate) rows ───────────────────────────────────────── */
+tr.channel-row td {
+  background: #e0eef8 !important;
+  font-weight: 700;
+  color: #0a3a55;
+  font-size: 12.5px;
+}
+tr.channel-row td:first-child { padding-left: 10px; }
+
+/* ── LOB rows ───────────────────────────────────────────────────────── */
+tr.lob-row:nth-child(even) td { background: #f8fbfd; }
+tr.lob-row td:first-child { padding-left: 22px; color: #1a3a50; }
+
+/* ── Conditional colours ────────────────────────────────────────────── */
+.green  { background: #d4edda !important; color: #155724 !important; font-weight: 600; }
+.yellow { background: #fff3cd !important; color: #7d5a00 !important; font-weight: 600; }
+.red    { background: #fde8e8 !important; color: #8b1a1a !important; font-weight: 600; }
+
+/* ── SL% mini-bar in interval table ────────────────────────────────── */
+.sl-cell { position: relative; min-width: 80px; }
+.sl-bar {
+  position: absolute; bottom: 0; left: 0;
+  height: 3px; border-radius: 0 0 2px 2px;
+  background: #00bcd4; opacity: 0.5;
+  transition: width 0.3s;
+}
+
+/* ── Legend ─────────────────────────────────────────────────────────── */
+.legend {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.legend-dot {
+  width: 12px; height: 12px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.ld-green  { background: #d4edda; border: 1px solid #c3e6cb; }
+.ld-yellow { background: #fff3cd; border: 1px solid #ffeeba; }
+.ld-red    { background: #fde8e8; border: 1px solid #f5c6cb; }
+.ld-blue   { background: #e0eef8; border: 1px solid #c5ddef; }
+
+/* ── Row count badge ────────────────────────────────────────────────── */
+.row-count {
+  font-size: 11px; color: #7a96a8; margin-bottom: 10px;
+}
+
+/* ── Executive Summary ──────────────────────────────────────────────── */
+.exec-header {
+  display: flex; align-items: baseline; gap: 14px; margin-bottom: 20px;
+  padding-bottom: 14px; border-bottom: 2px solid #e0eef8;
+}
+.exec-title { font-size: 17px; font-weight: 700; color: #0a3a55; }
+.exec-sub   { font-size: 11px; color: #7a96a8; }
+.exec-section-title {
+  font-size: 12px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.8px; color: #0097a7; margin: 0 0 10px;
+}
+.exec-kpis {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 14px;
+  margin-bottom: 28px;
+}
+.kpi-card {
+  background: #f4f9fd;
+  border: 1px solid #cddce8;
+  border-radius: 10px;
+  padding: 14px 16px;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.kpi-card.kpi-green  { border-left: 4px solid #28a745; }
+.kpi-card.kpi-yellow { border-left: 4px solid #ffc107; }
+.kpi-card.kpi-red    { border-left: 4px solid #dc3545; }
+.kpi-card.kpi-neutral{ border-left: 4px solid #0097a7; }
+.kpi-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: #5a7a90; }
+.kpi-value { font-size: 26px; font-weight: 700; color: #0a2d42; line-height: 1.1; }
+.kpi-sub   { font-size: 10px; color: #7a96a8; }
+.sev-critical { background:#fde8e8 !important; color:#8b1a1a !important; font-weight:700; border-radius:4px; padding:2px 7px; }
+.sev-warning  { background:#fff3cd !important; color:#7d5a00 !important; font-weight:700; border-radius:4px; padding:2px 7px; }
+</style>
+</head>
+<body>
+
+<!-- ── Header ─────────────────────────────────────────────────────────── -->
+<div id="header">
+  <div id="header-left">
+    <h1>📡 OCC IDP Performance Dashboard</h1>
+    <p>Enterprise CXM Operations · Upload report to populate</p>
+  </div>
+  <div id="header-right">
+    <div id="week-badge"></div>
+    <div id="upload-btn-wrap">
+      <input type="file" id="file-input" accept=".xlsb,.xlsx,.xlsm" multiple>
+      <button id="upload-btn" onclick="document.getElementById('file-input').click()">⬆ Upload files</button>
+      <div id="upload-status"></div>
+      <div id="share-saving">⏳ Generating share link…</div>
+      <div id="share-panel">
+        <input id="share-url" type="text" readonly>
+        <button id="copy-btn" onclick="copyShareLink()">📋 Copy link</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Main ───────────────────────────────────────────────────────────── -->
+<div id="main">
+
+  <!-- Empty state -->
+  <div id="drop-zone" onclick="document.getElementById('file-input').click()">
+    <div class="icon">📂</div>
+    <h2>Drop your OCC IDP Report here</h2>
+    <p>Or click to browse · Accepts <strong>.xlsb</strong> files · Multiple files supported</p>
+  </div>
+
+  <!-- Dashboard -->
+  <div id="dashboard">
+
+    <!-- Slicers -->
+    <div id="slicers-bar">
+      <div class="slicer-group">
+        <div class="slicer-label">Date</div>
+        <select id="slicer-date" class="slicer-select" onchange="applySlicers()">
+          <option value="">All Dates</option>
+        </select>
+      </div>
+      <div class="slicer-group">
+        <div class="slicer-label">Channel</div>
+        <select id="slicer-channel" class="slicer-select" onchange="onChannelChange()">
+          <option value="">All Channels</option>
+        </select>
+      </div>
+      <div class="slicer-group">
+        <div class="slicer-label">Vendor</div>
+        <select id="slicer-vendor" class="slicer-select" onchange="applySlicers()">
+          <option value="">All Vendors</option>
+        </select>
+      </div>
+      <div class="slicer-group">
+        <div class="slicer-label">Brand</div>
+        <select id="slicer-brand" class="slicer-select" onchange="applySlicers()">
+          <option value="">All Brands</option>
+        </select>
+      </div>
+      <div class="slicer-group">
+        <div class="slicer-label">Sub LOB</div>
+        <select id="slicer-lob" class="slicer-select" onchange="applySlicers()">
+          <option value="">All LOBs</option>
+        </select>
+      </div>
+      <button id="reset-btn" onclick="resetSlicers()">✕ Reset</button>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tab-bar">
+      <button class="tab-btn active" onclick="switchTab('ent')">📋 ENT Perf Summary</button>
+      <button class="tab-btn" onclick="switchTab('vendor')">🏢 Per Vendor</button>
+      <button class="tab-btn" onclick="switchTab('exec')">📊 Executive Summary</button>
+      <button class="tab-btn" onclick="switchTab('interval')">⏱ Interval Summary</button>
+    </div>
+
+    <!-- Tab: ENT Perf Summary -->
+    <div id="tab-ent" class="tab-panel active">
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot ld-green"></div>On target</div>
+        <div class="legend-item"><div class="legend-dot ld-yellow"></div>Near threshold</div>
+        <div class="legend-item"><div class="legend-dot ld-red"></div>Off target</div>
+        <div class="legend-item"><div class="legend-dot ld-blue"></div>Channel total</div>
+      </div>
+      <div class="row-count" id="ent-count"></div>
+      <div class="table-wrap">
+        <table id="ent-table">
+          <thead>
+            <tr>
+              <th>CXM Line of Business</th>
+              <th>Service Level %</th>
+              <th>FC Vol</th>
+              <th>Received Vol</th>
+              <th>Handled IB</th>
+              <th>FCV %</th>
+              <th>FC AHT</th>
+              <th>AHT w/ ACW</th>
+              <th>Schedule</th>
+              <th>Present</th>
+              <th>Abs %</th>
+              <th>Sched Adherence %</th>
+              <th>Base HC Req</th>
+              <th>Overs / Unders</th>
+            </tr>
+          </thead>
+          <tbody id="ent-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Tab: Interval Summary -->
+    <div id="tab-interval" class="tab-panel">
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot ld-green"></div>On target</div>
+        <div class="legend-item"><div class="legend-dot ld-yellow"></div>Near threshold</div>
+        <div class="legend-item"><div class="legend-dot ld-red"></div>Off target</div>
+      </div>
+      <div class="row-count" id="interval-count"></div>
+      <div class="table-wrap">
+        <table id="interval-table">
+          <thead>
+            <tr>
+              <th>Interval</th>
+              <th>Service Level %</th>
+              <th>FC Vol</th>
+              <th>Received Vol</th>
+              <th>Handled IB</th>
+              <th>FCV %</th>
+              <th>FC AHT</th>
+              <th>AHT w/ ACW</th>
+              <th>Schedule</th>
+              <th>Present</th>
+              <th>Abs %</th>
+              <th>Base HC Req</th>
+              <th>Overs / Unders</th>
+            </tr>
+          </thead>
+          <tbody id="interval-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Tab: Per Vendor View -->
+    <div id="tab-vendor" class="tab-panel">
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot ld-green"></div>On target</div>
+        <div class="legend-item"><div class="legend-dot ld-yellow"></div>Near threshold</div>
+        <div class="legend-item"><div class="legend-dot ld-red"></div>Off target</div>
+      </div>
+      <div class="row-count" id="vendor-count"></div>
+      <div class="table-wrap">
+        <table id="vendor-table">
+          <thead>
+            <tr>
+              <th>Vendor / LOB</th>
+              <th>Service Level %</th>
+              <th>FC Vol</th>
+              <th>Received Vol</th>
+              <th>Handled IB</th>
+              <th>FCV %</th>
+              <th>FC AHT</th>
+              <th>AHT w/ ACW</th>
+              <th>Schedule</th>
+              <th>Present</th>
+              <th>Abs %</th>
+              <th>Sched Adherence %</th>
+              <th>Base HC Req</th>
+              <th>Overs / Unders</th>
+            </tr>
+          </thead>
+          <tbody id="vendor-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Tab: Executive Summary -->
+    <div id="tab-exec" class="tab-panel">
+      <div class="exec-header">
+        <span class="exec-title">Enterprise Performance Snapshot</span>
+        <span class="exec-sub">Automated insights · Outliers flagged automatically</span>
+      </div>
+
+      <!-- KPI Scorecards -->
+      <div class="exec-kpis" id="exec-kpis"></div>
+
+      <!-- Channel Performance -->
+      <div class="exec-section-title">Channel Performance</div>
+      <div class="table-wrap" style="margin-bottom:28px;">
+        <table id="exec-channel-table">
+          <thead>
+            <tr>
+              <th>Channel</th>
+              <th>FC Volume</th>
+              <th>FCV %</th>
+              <th>Service Level %</th>
+              <th>FC AHT</th>
+              <th>AHT w/ ACW</th>
+              <th>Schedule HC</th>
+              <th>Adherence %</th>
+              <th>Overs / Unders</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="exec-channel-body"></tbody>
+        </table>
+      </div>
+
+      <!-- Outlier Report -->
+      <div class="exec-section-title" style="color:#8b1a1a;">⚠ Outlier Report — Lines Requiring Attention</div>
+      <div id="exec-no-outliers" style="display:none; padding:16px; color:#155724; background:#d4edda; border-radius:8px; font-weight:600; margin-bottom:12px;">
+        ✓ No outliers detected — all lines within thresholds.
+      </div>
+      <div class="table-wrap" id="exec-outlier-wrap">
+        <table id="exec-outlier-table">
+          <thead>
+            <tr>
+              <th>Line of Business</th>
+              <th>Channel</th>
+              <th>Vendor</th>
+              <th>Issue</th>
+              <th>Value</th>
+              <th>Threshold</th>
+              <th>Severity</th>
+            </tr>
+          </thead>
+          <tbody id="exec-outlier-body"></tbody>
+        </table>
+      </div>
+
+      <!-- Performance Recovery Recommendations -->
+      <div class="exec-section-title" style="color:#0a3a55;">💡 Performance Recovery Recommendations</div>
+      <div id="exec-recommendations" style="background:#fff;border:1px solid #cddce8;border-radius:10px;padding:18px 24px;margin-bottom:28px;font-size:13px;line-height:1.6;"></div>
+    </div>
+
+  </div><!-- /#dashboard -->
+</div><!-- /#main -->
+
+<script>
+// ── Global state ─────────────────────────────────────────────────────────────
+let entRows    = [];
+let itvlRows   = [];
+let lobMeta    = {};   // C_LOB → { channel, vendor, brand }
+let slicerOpts = { channels: [], vendors: [], brands: [], dates: new Map() };
+let cfFcastCache = null;  // raw cf_fcast rows + col indices
+let cfSchedCache = null;  // raw cf_sched rows + col indices
+let vendorRows   = [];    // aggregated per-vendor-per-LOB rows for Vendor tab
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+const fSecs = v => (v == null || isNaN(v)) ? '—' : (v * 86400 / 60).toFixed(1) + ' min';
+const fTime = v => {
+  if (v == null || isNaN(v)) return '—';
+  const frac = v % 1;  // strip date serial part
+  const totalMin = Math.round(frac * 1440);
+  const h = Math.floor(totalMin / 60), m = totalMin % 60;
+  return String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0');
+};
+function excelDateToStr(serial) {
+  if (!serial || serial < 1) return '';
+  const d = new Date(Date.UTC(1900, 0, 1) + (serial - (serial > 59 ? 2 : 1)) * 86400000);
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
+}
+const asPct = v => (v == null || isNaN(v)) ? null : parseFloat((v * 100).toFixed(1));
+
+function colorSL(v)  { if (v==null) return ''; return v>=80?'green':v>=70?'yellow':'red'; }
+function colorAbs(v) { if (v==null) return ''; return v<5?'green':v<=10?'yellow':'red'; }
+function colorAdh(v) { if (v==null) return ''; return v>=85?'green':v>=75?'yellow':'red'; }
+function colorFCV(v) { if (v==null) return ''; return v<=110?'green':v<=130?'yellow':'red'; }
+
+function cell(val, cls='') {
+  return `<td class="${cls}">${val}</td>`;
+}
+
+// ── File input & drag-drop ────────────────────────────────────────────────────
+document.getElementById('file-input').addEventListener('change', e => {
+  if (e.target.files.length) loadFiles(Array.from(e.target.files));
+});
+
+const dz = document.getElementById('drop-zone');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+dz.addEventListener('drop', e => {
+  e.preventDefault(); dz.classList.remove('drag-over');
+  if (e.dataTransfer.files.length) loadFiles(Array.from(e.dataTransfer.files));
+});
+
+// ── Load & parse (multi-file support) ────────────────────────────────────────
+function loadFiles(files) {
+  cfFcastCache = null;
+  cfSchedCache = null;
+  let processed = 0;
+  document.getElementById('upload-status').textContent = `Reading 0/${files.length}…`;
+
+  function readNext(idx) {
+    if (idx >= files.length) {
+      // All files parsed — rebuild views
+      rebuildEntRows('', '', '', '', '');
+      rebuildIntervalRows('', '', '', '', '');
+      rebuildVendorRows('', '', '', '', '');
+      populateSlicers();
+      applySlicers();
+
+      // Week badge from first filename
+      const m = files[0].name.match(/WC(\d{2})(\d{2})/i);
+      if (m) {
+        const badge = document.getElementById('week-badge');
+        badge.textContent = `Week of ${m[1]}/${m[2]}`;
+        badge.style.display = 'inline-block';
+      }
+
+      document.getElementById('drop-zone').style.display = 'none';
+      document.getElementById('dashboard').style.display = 'block';
+      document.getElementById('upload-status').textContent =
+        `✓ ${files.length} file${files.length > 1 ? 's' : ''} loaded`;
+
+      // Auto-save to cloud for shareable link
+      saveToCloud();
+      return;
+    }
+
+    const file = files[idx];
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array', cellDates: false });
+        if (!wb.Sheets['cf_fcast']) {
+          document.getElementById('upload-status').textContent =
+            `✗ "${file.name}" missing sheet "cf_fcast" — skipped.`;
+          readNext(idx + 1);
+          return;
+        }
+        if (!cfFcastCache) {
+          // First file — initialise caches fresh
+          parseLobMeta(wb);
+          parseEnt(wb);
+          parseSched(wb);
+        } else {
+          // Subsequent files — append rows (skip header row)
+          const ws = wb.Sheets['cf_fcast'];
+          if (ws) {
+            const newRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true });
+            cfFcastCache.rows.push(...newRows.slice(1));
+          }
+          const ws2 = wb.Sheets['cf_sched'];
+          if (ws2 && cfSchedCache) {
+            const newRows2 = XLSX.utils.sheet_to_json(ws2, { header: 1, defval: null, raw: true });
+            cfSchedCache.rows.push(...newRows2.slice(1));
+          }
+        }
+        processed++;
+        document.getElementById('upload-status').textContent = `Reading ${processed}/${files.length}…`;
+        readNext(idx + 1);
+      } catch(err) {
+        document.getElementById('upload-status').textContent = `✗ Error in "${file.name}": ${err.message}`;
+        console.error(err);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+  readNext(0);
+}
+
+// ── Cloud persistence helpers ─────────────────────────────────────────────────
+async function compressData(obj) {
+  const json = JSON.stringify(obj);
+  const stream = new Blob([json]).stream().pipeThrough(new CompressionStream('gzip'));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+async function decompressData(bytes) {
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+  return JSON.parse(await new Response(stream).text());
+}
+function extractColMap(cache) {
+  const map = {};
+  for (const k in cache) if (k !== 'rows') map[k] = cache[k];
+  return map;
+}
+async function saveToCloud() {
+  if (!cfFcastCache) return;
+  const savingEl = document.getElementById('share-saving');
+  const panelEl  = document.getElementById('share-panel');
+  const urlEl    = document.getElementById('share-url');
+  savingEl.style.display = 'block';
+  panelEl.style.display  = 'none';
+  try {
+    const payload = {
+      fcast: { rows: cfFcastCache.rows, cols: extractColMap(cfFcastCache) },
+      sched: cfSchedCache ? { rows: cfSchedCache.rows, cols: extractColMap(cfSchedCache) } : null
+    };
+    const compressed = await compressData(payload);
+    // safe base64 for large buffers
+    let binary = '';
+    for (let i = 0; i < compressed.length; i++) binary += String.fromCharCode(compressed[i]);
+    const b64 = btoa(binary);
+    const res = await fetch('/api/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: b64
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const { key } = await res.json();
+    const url = new URL(location.href);
+    url.searchParams.set('r', key);
+    history.replaceState(null, '', url.toString());
+    urlEl.value = url.toString();
+    savingEl.style.display = 'none';
+    panelEl.style.display  = 'flex';
+  } catch(err) {
+    console.warn('Cloud save failed:', err);
+    savingEl.textContent = '⚠️ Share link unavailable — check function logs';
+  }
+}
+function copyShareLink() {
+  const urlEl = document.getElementById('share-url');
+  urlEl.select();
+  navigator.clipboard.writeText(urlEl.value).catch(() => document.execCommand('copy'));
+  const btn = document.getElementById('copy-btn');
+  btn.textContent = '✓ Copied!';
+  setTimeout(() => { btn.textContent = '📋 Copy link'; }, 2000);
+}
+
+// ── Auto-load from shareable link ─────────────────────────────────────────────
+(async function checkSharedLink() {
+  const key = new URLSearchParams(location.search).get('r');
+  if (!key) return;
+  const statusEl = document.getElementById('upload-status');
+  statusEl.textContent = '⏳ Loading shared report…';
+  document.getElementById('drop-zone').style.display = 'none';
+  try {
+    const res = await fetch(`/api/load?key=${encodeURIComponent(key)}`);
+    if (!res.ok) throw new Error('Report not found');
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    const payload = await decompressData(bytes);
+    cfFcastCache = { rows: payload.fcast.rows, ...payload.fcast.cols };
+    cfSchedCache = payload.sched ? { rows: payload.sched.rows, ...payload.sched.cols } : null;
+    rebuildEntRows('', '', '', '', '');
+    rebuildIntervalRows('', '', '', '', '');
+    rebuildVendorRows('', '', '', '', '');
+    populateSlicers();
+    applySlicers();
+    document.getElementById('dashboard').style.display = 'block';
+    statusEl.textContent = '✓ Loaded from shared link';
+    // Show the share panel with current URL so it can be re-shared
+    const urlEl   = document.getElementById('share-url');
+    const panelEl = document.getElementById('share-panel');
+    urlEl.value = location.href;
+    panelEl.style.display = 'flex';
+  } catch(err) {
+    statusEl.textContent = '✗ Could not load shared report — please upload file';
+    document.getElementById('drop-zone').style.display = 'flex';
+    console.error(err);
+  }
+})();
+
+// ── Column finder (dynamic — handles any column order) ───────────────────────
+function colIdx(headerRow, name) {
+  for (let i = 0; i < headerRow.length; i++) {
+    if (headerRow[i] != null && String(headerRow[i]).trim() === name) return i;
+  }
+  return -1;
+}
+
+// ── Parse cf_fcast → lobMeta + slicerOpts (single authoritative source) ──────
+function parseLobMeta(wb) {
+  lobMeta = {};
+  slicerOpts = { channels: new Set(), vendors: new Set(), brands: new Set(), dates: new Map() };
+
+  const ws = wb.Sheets['cf_fcast'];
+  if (!ws) return;
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true });
+  if (rows.length < 2) return;
+
+  const hdr      = rows[0];
+  const cLob     = colIdx(hdr, 'C_LOB');
+  const cChannel = colIdx(hdr, 'Channel');
+  const cBrand   = colIdx(hdr, 'Brand');
+  const cVendor  = colIdx(hdr, 'Partner');
+  const cDate2   = colIdx(hdr, 'Date2');
+
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r) continue;
+
+    const lob     = r[cLob]     != null ? String(r[cLob]).trim()     : '';
+    const channel = r[cChannel] != null ? String(r[cChannel]).trim() : '';
+    const brand   = r[cBrand]   != null ? String(r[cBrand]).trim()   : '';
+    const vendor  = r[cVendor]  != null ? String(r[cVendor]).trim()  : '';
+    const date2   = r[cDate2];
+
+    if (lob && !lobMeta[lob]) {
+      lobMeta[lob] = { channel, vendor, brand };
+    }
+    if (channel) slicerOpts.channels.add(channel);
+    if (vendor)  slicerOpts.vendors.add(vendor);
+    if (brand)   slicerOpts.brands.add(brand);
+
+    if (date2 != null && !isNaN(date2)) {
+      const serial = Math.floor(date2);
+      if (serial > 0 && !slicerOpts.dates.has(serial)) {
+        slicerOpts.dates.set(serial, excelDateToStr(serial));
+      }
+    }
+  }
+}
+
+// ── Cache cf_fcast raw rows for on-demand date-filtered aggregation ───────────
+function parseEnt(wb) {
+  cfFcastCache = null;
+  const ws = wb.Sheets['cf_fcast'];
+  if (!ws) return;
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true });
+  if (rows.length < 2) return;
+  const hdr = rows[0];
+  cfFcastCache = {
+    rows,
+    cLob:  colIdx(hdr, 'C_LOB'),
+    cCh:   colIdx(hdr, 'Channel'),
+    cDate2: colIdx(hdr, 'Date2'),
+    cRcv:  colIdx(hdr, 'Received Volume'),
+    cHndl: colIdx(hdr, 'Handled Volume'),
+    cSTA:  colIdx(hdr, 'STA Vol'),
+    cBase: colIdx(hdr, 'STA Base'),
+    cFcV:  colIdx(hdr, 'fcstContactsReceived'),
+    cFcAH: colIdx(hdr, 'fcstAHT'),
+    cHT:   colIdx(hdr, 'Handle Time'),
+    cSch:    colIdx(hdr, 'int_Sched'),
+    cPres:   colIdx(hdr, 'int_Present'),
+    cDT:     colIdx(hdr, 'D/T'),
+    cVendor: colIdx(hdr, 'Partner'),
+    cBrand:  colIdx(hdr, 'Brand'),
+  };
+}
+
+// ── Aggregate cf_sched Adherence% filtered by date serial string ──────────────
+function buildSchedAgg(dt) {
+  if (!cfSchedCache) return {};
+  const { rows, cLob, cAdhS, cAdhM, cDate } = cfSchedCache;
+  const agg = {};
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r) continue;
+    if (dt && cDate >= 0 && r[cDate] != null && String(Math.floor(r[cDate])) !== dt) continue;
+    const lob = r[cLob] != null ? String(r[cLob]).trim() : '';
+    if (!lob) continue;
+    if (!agg[lob]) agg[lob] = { s: 0, m: 0 };
+    agg[lob].s += r[cAdhS] || 0;
+    agg[lob].m += r[cAdhM] || 0;
+  }
+  return agg;
+}
+
+// ── Build itvlRows from cf_fcast, filtered by all active slicers ──────────────
+function rebuildIntervalRows(dt, ch, vd, br, lb) {
+  itvlRows = [];
+  if (!cfFcastCache) return;
+  const { rows, cLob, cCh, cDate2, cRcv, cHndl, cSTA, cBase, cFcV, cFcAH, cHT, cSch, cPres, cDT, cVendor, cBrand } = cfFcastCache;
+  if (cDT < 0) return;
+
+  const agg = {};
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r) continue;
+    if (dt && r[cDate2] != null && String(Math.floor(r[cDate2])) !== dt) continue;
+    const lob      = r[cLob]    != null ? String(r[cLob]).trim()    : '';
+    const rchannel = r[cCh]     != null ? String(r[cCh]).trim()     : '';
+    const vendor   = cVendor >= 0 && r[cVendor] != null ? String(r[cVendor]).trim() : '';
+    const brand    = cBrand  >= 0 && r[cBrand]  != null ? String(r[cBrand]).trim()  : '';
+    if (ch && rchannel !== ch) continue;
+    if (vd && vendor   !== vd) continue;
+    if (br && brand    !== br) continue;
+    if (lb && lob      !== lb) continue;
+    const dtVal = r[cDT];
+    if (dtVal == null || isNaN(dtVal)) continue;
+    const timeFrac = dtVal % 1;
+    const key = Math.round(timeFrac * 2880);
+    if (!agg[key]) agg[key] = { timeFrac, rcv:0, hndl:0, sta:0, base:0,
+      fc_v:0, fc_aht_n:0, fc_aht_d:0, ht_n:0, ht_d:0, sch:0, pres:0, n:0 };
+    const d    = agg[key];
+    const rcv  = r[cRcv]  || 0, hndl = r[cHndl] || 0;
+    const fc_v = r[cFcV]  || 0, ht   = r[cHT]   || 0;
+    const sch  = r[cSch]  || 0, pres = r[cPres]  || 0;
+    d.rcv  += rcv;  d.hndl += hndl;
+    d.sta  += r[cSTA]  || 0;
+    d.base += r[cBase] || 0;
+    d.fc_v += fc_v;
+    if (fc_v > 0 && r[cFcAH]) { d.fc_aht_n += r[cFcAH] * fc_v; d.fc_aht_d += fc_v; }
+    if (hndl > 0 && ht > 0)   { d.ht_n += ht; d.ht_d += hndl; }
+    d.sch  += sch;  d.pres += pres;  d.n++;
+  }
+
+  const keys = Object.keys(agg).sort((a, b) => agg[a].timeFrac - agg[b].timeFrac);
+  for (const key of keys) {
+    const d   = agg[key];
+    const sl  = d.base > 0     ? d.sta / d.base * 100             : null;
+    const fcv = d.fc_v > 0     ? d.rcv  / d.fc_v * 100            : null;
+    const fcht = d.fc_aht_d > 0 ? d.fc_aht_n / d.fc_aht_d / 86400 : null;
+    const aht  = d.ht_d  > 0   ? d.ht_n  / d.ht_d  / 86400       : null;
+    const sched = d.n > 0 ? Math.round(d.sch  / d.n) : null;
+    const pres  = d.n > 0 ? Math.round(d.pres / d.n) : null;
+    const abs   = sched > 0 ? (sched - pres) / sched * 100        : null;
+    itvlRows.push({
+      interval: fTime(d.timeFrac),
+      sl, fcvol: d.fc_v > 0 ? Math.round(d.fc_v) : null,
+      rcv:  d.rcv  > 0 ? Math.round(d.rcv)  : null,
+      hndl: d.hndl > 0 ? Math.round(d.hndl) : null,
+      fcv, fcht, aht, sched, pres, abs,
+    });
+  }
+}
+
+// ── Build vendorRows from cf_fcast keyed by vendor|LOB (preserves cross-vendor LOBs) ──
+function rebuildVendorRows(dt, ch, vd, br, lb) {
+  vendorRows = [];
+  if (!cfFcastCache) return;
+  const { rows, cLob, cCh, cDate2, cRcv, cHndl, cSTA, cBase,
+          cFcV, cFcAH, cHT, cSch, cPres, cVendor, cBrand } = cfFcastCache;
+
+  const agg = {};  // key: "vendor\x00lob"
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r) continue;
+    if (dt && r[cDate2] != null && String(Math.floor(r[cDate2])) !== dt) continue;
+    const lob     = r[cLob]    != null ? String(r[cLob]).trim()    : '';
+    const channel = r[cCh]     != null ? String(r[cCh]).trim()     : '';
+    const vendor  = cVendor >= 0 && r[cVendor] != null ? String(r[cVendor]).trim() : '(No Vendor)';
+    const brand   = cBrand  >= 0 && r[cBrand]  != null ? String(r[cBrand]).trim()  : '';
+    if (!lob) continue;
+    if (ch && channel !== ch) continue;
+    if (vd && vendor  !== vd) continue;
+    if (br && brand   !== br) continue;
+    if (lb && lob     !== lb) continue;
+
+    const key = vendor + '\x00' + lob;
+    if (!agg[key]) agg[key] = {
+      vendor, lob, channel, brand,
+      rcv:0, hndl:0, sta:0, base:0,
+      fc_v:0, fc_aht_n:0, fc_aht_d:0,
+      ht_n:0, ht_d:0, sch_sum:0, sch_nz:0, pres_sum:0, pres_nz:0
+    };
+    const d    = agg[key];
+    const rcv  = r[cRcv]  || 0, hndl = r[cHndl] || 0;
+    const fc_v = r[cFcV]  || 0, ht   = r[cHT]   || 0;
+    const sch  = r[cSch]  || 0, pres = r[cPres]  || 0;
+    d.rcv  += rcv;  d.hndl += hndl;
+    d.sta  += r[cSTA]  || 0;
+    d.base += r[cBase] || 0;
+    d.fc_v += fc_v;
+    if (fc_v > 0 && r[cFcAH]) { d.fc_aht_n += r[cFcAH] * fc_v; d.fc_aht_d += fc_v; }
+    if (hndl > 0 && ht  > 0)  { d.ht_n  += ht;  d.ht_d  += hndl; }
+    d.sch_sum  += sch;  d.pres_sum += pres;
+    if (sch  > 0) d.sch_nz++;
+    if (pres > 0) d.pres_nz++;
+  }
+
+  // Get per-LOB adh% from cf_sched (LOB-level only; cf_sched has no vendor column)
+  const schedAgg = buildSchedAgg(dt);
+
+  vendorRows = Object.values(agg).map(d => {
+    const sl    = d.base > 0     ? Math.min(d.sta / d.base * 100, 100) : null;
+    const fcv   = d.fc_v > 0     ? d.rcv  / d.fc_v * 100            : null;
+    const fcht  = d.fc_aht_d > 0 ? d.fc_aht_n / d.fc_aht_d / 86400 : null;
+    const aht   = d.ht_d  > 0    ? d.ht_n  / d.ht_d  / 86400       : null;
+    const sched = d.sch_nz  > 0  ? Math.round(d.sch_sum  / d.sch_nz)  : null;
+    const pres  = d.pres_nz > 0  ? Math.round(d.pres_sum / d.pres_nz) : null;
+    const abs   = d.sch_sum > 0  ? (d.sch_sum - d.pres_sum) / d.sch_sum * 100 : null;
+    const sa    = schedAgg[d.lob];
+    const adh   = sa && sa.s > 0 ? sa.m / sa.s * 100 : null;
+    return { vendor: d.vendor, lob: d.lob, channel: d.channel, brand: d.brand,
+             sl, fcvol: d.fc_v > 0 ? Math.round(d.fc_v) : null,
+             rcv: d.rcv > 0 ? Math.round(d.rcv) : null,
+             hndl: d.hndl > 0 ? Math.round(d.hndl) : null,
+             fcv, fcht, aht, sched, pres, abs, adh, _sch_nz: d.sch_nz };
+  });
+}
+
+// ── Build entRows from cached cf_fcast, filtered by all active slicers ────────
+function rebuildEntRows(dt, ch, vd, br, lb) {
+  entRows = [];
+  if (!cfFcastCache) return;
+  const { rows, cLob, cCh, cDate2, cRcv, cHndl, cSTA, cBase,
+          cFcV, cFcAH, cHT, cSch, cPres, cVendor, cBrand } = cfFcastCache;
+
+  const agg = {};
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r) continue;
+    if (dt && r[cDate2] != null && String(Math.floor(r[cDate2])) !== dt) continue;
+    const lob     = r[cLob] != null ? String(r[cLob]).trim() : '';
+    const channel = r[cCh]  != null ? String(r[cCh]).trim()  : '';
+    const vendor  = cVendor >= 0 && r[cVendor] != null ? String(r[cVendor]).trim() : '';
+    const brand   = cBrand  >= 0 && r[cBrand]  != null ? String(r[cBrand]).trim()  : '';
+    if (!lob) continue;
+    if (ch && channel !== ch) continue;
+    if (vd && vendor  !== vd) continue;
+    if (br && brand   !== br) continue;
+    if (lb && lob     !== lb) continue;
+
+    if (!agg[lob]) agg[lob] = {
+      ch: channel, rcv:0, hndl:0, sta:0, base:0,
+      fc_v:0, fc_aht_n:0, fc_aht_d:0,
+      ht_n:0, ht_d:0,
+      sch_sum:0, sch_nz:0, pres_sum:0, pres_nz:0
+    };
+    const d    = agg[lob];
+    const rcv  = r[cRcv]  || 0;
+    const hndl = r[cHndl] || 0;
+    const fc_v = r[cFcV]  || 0;
+    const ht   = r[cHT]   || 0;
+    const sch  = r[cSch]  || 0;
+    const pres = r[cPres] || 0;
+
+    d.rcv  += rcv;  d.hndl += hndl;
+    d.sta  += r[cSTA]  || 0;
+    d.base += r[cBase] || 0;
+    d.fc_v += fc_v;
+    if (fc_v > 0 && r[cFcAH]) { d.fc_aht_n += r[cFcAH] * fc_v; d.fc_aht_d += fc_v; }
+    if (hndl > 0 && ht > 0)   { d.ht_n += ht; d.ht_d += hndl; }
+    d.sch_sum  += sch;  d.pres_sum += pres;
+    if (sch > 0)  d.sch_nz++;
+    if (pres > 0) d.pres_nz++;
+  }
+
+  function makeRow(lob, d, isChannel, preHc = null) {
+    const meta   = lobMeta[lob] || {};
+    const sl     = d.base > 0     ? Math.min(d.sta / d.base * 100, 100) : null;
+    const fcv    = d.fc_v > 0     ? d.rcv  / d.fc_v * 100            : null;
+    const fc_aht = d.fc_aht_d > 0 ? d.fc_aht_n / d.fc_aht_d / 86400 : null;
+    const aht    = d.ht_d > 0     ? d.ht_n / d.ht_d / 86400          : null;
+    const sch    = d.sch_nz > 0   ? Math.round(d.sch_sum / d.sch_nz)  : null;
+    const pres   = d.pres_nz > 0  ? Math.round(d.pres_sum / d.pres_nz) : null;
+    const abs    = d.sch_sum > 0  ? (d.sch_sum - d.pres_sum) / d.sch_sum * 100 : null;
+    return {
+      lob, isChannel,
+      channel: isChannel ? lob : (d.ch || meta.channel || ''),
+      vendor:  meta.vendor || '',
+      brand:   meta.brand  || '',
+      sl, fcvol: d.fc_v > 0 ? Math.round(d.fc_v) : null,
+      rcv: d.rcv > 0 ? Math.round(d.rcv) : null,
+      hndl: d.hndl > 0 ? Math.round(d.hndl) : null,
+      fcv, fcht: fc_aht, aht, sched: sch, pres, abs, adh: null,
+      _sta: d.sta, _base: d.base,   // raw numerator/denominator for SL re-aggregation
+      _sch_nz: d.sch_nz,            // interval count — used to normalise HC Req to same scale as sched
+      _hcReq: preHc,                // pre-summed HC Req for channel rows (null = compute per-LOB formula)
+    };
+  }
+
+  const CH_ORDER = ['Inbound Hotline','Messaging','Store Hotline','VIBER','Outbound Hotline','NIAS'];
+  const byChannel = {};
+  for (const [lob, d] of Object.entries(agg)) {
+    const ch = d.ch || '';
+    if (!byChannel[ch]) byChannel[ch] = [];
+    byChannel[ch].push([lob, d]);
+  }
+
+  for (const ch of CH_ORDER) {
+    const lobs = byChannel[ch];
+    if (!lobs || lobs.length === 0) continue;
+    const chD = { ch, rcv:0, hndl:0, sta:0, base:0, fc_v:0,
+                  fc_aht_n:0, fc_aht_d:0, ht_n:0, ht_d:0,
+                  sch_sum:0, sch_nz:0, pres_sum:0, pres_nz:0 };
+    let chHcReq = 0;
+    for (const [, d] of lobs) {
+      chD.rcv += d.rcv;   chD.hndl += d.hndl;
+      chD.sta += d.sta;   chD.base += d.base;
+      chD.fc_v += d.fc_v;
+      chD.fc_aht_n += d.fc_aht_n; chD.fc_aht_d += d.fc_aht_d;
+      chD.ht_n  += d.ht_n;  chD.ht_d  += d.ht_d;
+      // Accumulate LOB-level averages so channel total = sum of LOB averages
+      if (d.sch_nz  > 0) { chD.sch_sum  += d.sch_sum  / d.sch_nz;  chD.sch_nz  = 1; }
+      if (d.pres_nz > 0) { chD.pres_sum += d.pres_sum / d.pres_nz; chD.pres_nz = 1; }
+      // Sum LOB-level HC Reqs so channel row doesn't use its own (wrong-scale) fcvol
+      const lobAht = d.ht_d > 0 ? d.ht_n / d.ht_d / 86400 : null;
+      const lobHc = hcReq(d.sch_nz > 0 ? d.fc_v / d.sch_nz : d.fc_v, lobAht, chanConc(ch));
+      if (lobHc != null) chHcReq += lobHc;
+    }
+    entRows.push(makeRow(ch, chD, true, chHcReq > 0 ? chHcReq : null));
+    for (const [lob, d] of lobs.sort((a, b) => a[0].localeCompare(b[0]))) {
+      entRows.push(makeRow(lob, d, false));
+    }
+  }
+
+  // Merge Adherence% from cf_sched (same date filter)
+  const schedAgg = buildSchedAgg(dt);
+  for (const row of entRows) {
+    if (!row.isChannel) {
+      const d = schedAgg[row.lob];
+      if (d && d.s > 0) row.adh = d.m / d.s * 100;
+    }
+  }
+  for (const ch of entRows.filter(r => r.isChannel)) {
+    const subs = entRows.filter(r => !r.isChannel && r.channel === ch.lob);
+    const totS = subs.reduce((a, r) => { const d = schedAgg[r.lob]; return a + (d ? d.s : 0); }, 0);
+    const totM = subs.reduce((a, r) => { const d = schedAgg[r.lob]; return a + (d ? d.m : 0); }, 0);
+    if (totS > 0) ch.adh = totM / totS * 100;
+  }
+}
+
+// ── Cache cf_sched raw rows for date-filtered Adherence% ─────────────────────
+function parseSched(wb) {
+  cfSchedCache = null;
+  const ws = wb.Sheets['cf_sched'];
+  if (!ws) return;
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true });
+  if (rows.length < 2) return;
+  const hdr  = rows[0];
+  const cLob  = colIdx(hdr, 'C_LOB');
+  let cAdhS = colIdx(hdr, 'Adh_Sched Time');
+  if (cAdhS < 0) cAdhS = colIdx(hdr, 'Adh_Sched_Time');
+  let cAdhM = colIdx(hdr, 'Adh_in_Mins');
+  if (cAdhM < 0) cAdhM = colIdx(hdr, 'Adh_In_Mins');
+  const cDate = colIdx(hdr, 'Date');
+  if (cLob < 0 || cAdhS < 0 || cAdhM < 0) return;
+  cfSchedCache = { rows, cLob, cAdhS, cAdhM, cDate };
+}
+
+// ── Slicers ───────────────────────────────────────────────────────────────────
+function populateSlicers() {
+  // All filter options come from cf_fcast (single source of truth)
+  const channels = [...slicerOpts.channels].sort();
+  const vendors  = [...slicerOpts.vendors].sort();
+  const brands   = [...slicerOpts.brands].sort();
+  const lobs     = [...new Set(entRows.filter(r => !r.isChannel).map(r => r.lob).filter(Boolean))].sort();
+
+  // Dates from cf_fcast Date2 column (sorted by serial → chronological order)
+  const dateEntries = [...slicerOpts.dates.entries()].sort((a, b) => a[0] - b[0]);
+  const dateLabels  = dateEntries.map(e => e[1]);
+  const dateValues  = dateEntries.map(e => String(e[0]));
+
+  fillSelect('slicer-date',    dateLabels, dateValues);
+  fillSelect('slicer-channel', channels);
+  fillSelect('slicer-vendor',  vendors);
+  fillSelect('slicer-brand',   brands);
+  fillSelect('slicer-lob',     lobs);
+}
+
+function fillSelect(id, labels, values) {
+  const sel = document.getElementById(id);
+  while (sel.options.length > 1) sel.remove(1);
+  labels.forEach((lbl, i) => {
+    const val = values ? values[i] : lbl;
+    sel.add(new Option(lbl, val));
+  });
+}
+
+function resetSlicers() {
+  ['slicer-date','slicer-channel','slicer-vendor','slicer-brand','slicer-lob'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  applySlicers();
+}
+
+function onChannelChange() {
+  const ch = document.getElementById('slicer-channel').value;
+  // Cascade: update Sub LOB options to only show LOBs in selected channel
+  const lobOnly = entRows.filter(r => !r.isChannel);
+  const filtered = ch ? lobOnly.filter(r => r.channel === ch) : lobOnly;
+  const lobs = [...new Set(filtered.map(r => r.lob).filter(Boolean))].sort();
+  fillSelect('slicer-lob', lobs);
+  document.getElementById('slicer-lob').value = '';
+  applySlicers();
+}
+
+function applySlicers() {
+  const dt = document.getElementById('slicer-date').value;
+  const ch = document.getElementById('slicer-channel').value;
+  const vd = document.getElementById('slicer-vendor').value;
+  const br = document.getElementById('slicer-brand').value;
+  const lb = document.getElementById('slicer-lob').value;
+  rebuildEntRows(dt, ch, vd, br, lb);
+  rebuildIntervalRows(dt, ch, vd, br, lb);
+  rebuildVendorRows(dt, ch, vd, br, lb);
+  const anyActive = ch || vd || br || lb;
+
+  const tbody = document.getElementById('ent-body');
+  tbody.innerHTML = '';
+  let shown = 0;
+
+  entRows.forEach(r => {
+    // When slicers are active: skip channel aggregate rows
+    if (anyActive && r.isChannel) return;
+
+    shown++;
+    const tr = document.createElement('tr');
+    tr.className = r.isChannel ? 'channel-row' : 'lob-row';
+
+    tr.innerHTML =
+      `<td>${r.lob}</td>` +
+      cell(r.sl   != null ? r.sl.toFixed(1)+'%' : '—', colorSL(r.sl)) +
+      `<td>${r.fcvol != null ? r.fcvol.toLocaleString() : '—'}</td>` +
+      `<td>${r.rcv  != null ? r.rcv.toLocaleString()  : '—'}</td>` +
+      `<td>${r.hndl != null ? r.hndl.toLocaleString() : '—'}</td>` +
+      cell(r.fcv  != null ? r.fcv.toFixed(1)+'%'  : '—', colorFCV(r.fcv)) +
+      `<td>${fSecs(r.fcht)}</td>` +
+      `<td>${fSecs(r.aht)}</td>` +
+      `<td>${r.sched != null ? r.sched : '—'}</td>` +
+      `<td>${r.pres  != null ? r.pres  : '—'}</td>` +
+      cell(r.abs  != null ? r.abs.toFixed(1)+'%'  : '—', colorAbs(r.abs)) +
+      cell(r.adh  != null ? r.adh.toFixed(1)+'%'  : '—', colorAdh(r.adh)) +
+      `<td>${(r._hcReq ?? hcReq(normFcvol(r), r.aht, chanConc(r.channel))) ?? '—'}</td>` +
+      ovsUndCell(r.sched, r._hcReq ?? hcReq(normFcvol(r), r.aht, chanConc(r.channel)));
+
+    tbody.appendChild(tr);
+  });
+
+  const lobShown = anyActive ? shown : entRows.filter(r=>!r.isChannel).length;
+  document.getElementById('ent-count').textContent =
+    `Showing ${shown} row${shown!==1?'s':''} · ${lobShown} line${lobShown!==1?'s':''} of business`;
+  renderInterval();
+  renderVendor();
+  renderExecSummary();
+}
+
+
+// ── Render Interval ───────────────────────────────────────────────────────────
+function renderInterval() {
+  const tbody = document.getElementById('interval-body');
+  tbody.innerHTML = '';
+
+  itvlRows.forEach(r => {
+    const slBar = r.sl != null
+      ? `<div class="sl-bar" style="width:${Math.min(r.sl,100)}%"></div>`
+      : '';
+    const slCls = colorSL(r.sl);
+    const ivHc = (r.fcvol != null && r.aht != null)
+      ? Math.ceil(Number(r.fcvol) * r.aht * 86400 / 1800) : null;
+    const tr = document.createElement('tr');
+    tr.className = 'lob-row';
+    tr.innerHTML =
+      `<td style="font-weight:600;">${r.interval}</td>` +
+      `<td class="sl-cell ${slCls}" style="position:relative;">` +
+        (r.sl != null ? r.sl.toFixed(1)+'%' : '—') + slBar +
+      `</td>` +
+      `<td>${r.fcvol != null ? Number(r.fcvol).toLocaleString() : '—'}</td>` +
+      `<td>${r.rcv   != null ? r.rcv.toLocaleString()  : '—'}</td>` +
+      `<td>${r.hndl  != null ? r.hndl.toLocaleString() : '—'}</td>` +
+      cell(r.fcv != null ? r.fcv.toFixed(1)+'%' : '—', colorFCV(r.fcv)) +
+      `<td>${fSecs(r.fcht)}</td>` +
+      `<td>${fSecs(r.aht)}</td>` +
+      `<td>${r.sched != null ? r.sched : '—'}</td>` +
+      `<td>${r.pres  != null ? r.pres  : '—'}</td>` +
+      cell(r.abs != null ? r.abs.toFixed(1)+'%' : '—', colorAbs(r.abs)) +
+      `<td>${ivHc != null ? ivHc : '—'}</td>` +
+      ovsUndCell(r.sched, ivHc);
+    tbody.appendChild(tr);
+  });
+
+  document.getElementById('interval-count').textContent =
+    `${itvlRows.length} intervals`;
+}
+
+// ── HC Requirement helper (FC Vol × FC AHT / available seconds / concurrency) ─
+function hcReq(fcvol, fcht, conc = 1) {
+  if (fcvol == null || fcht == null || fcht === 0) return null;
+  return Math.ceil(fcvol * fcht * 86400 / 1800 / (conc || 1));   // 1800s = 30-min interval (matches sched avg scale)
+}
+// ── Normalise fcvol to per-interval scale (same denominator as sched avg) ─────
+function normFcvol(r) { return (r._sch_nz > 0 && r.fcvol != null) ? r.fcvol / r._sch_nz : r.fcvol; }
+// ── Concurrency factor per channel (Messaging agents handle 3 simultaneous) ───
+function chanConc(channel) { return channel === 'Messaging' ? 3 : 1; }
+
+// ── Overs / Unders = Schedule − Base HC Req ──────────────────────────────────
+function ovsUndCell(sched, hc) {
+  if (sched == null || hc == null) return '<td>—</td>';
+  const diff = sched - hc;
+  const color = diff >= 0 ? '#155724' : '#8b1a1a';
+  const sign  = diff > 0 ? '+' : '';
+  return `<td style="color:${color};font-weight:600;">${sign}${diff}</td>`;
+}
+
+// ── Render Per Vendor View (uses vendorRows built by rebuildVendorRows) ────────
+function renderVendor() {
+  const tbody = document.getElementById('vendor-body');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+
+  const vendorMap = {};
+  for (const r of vendorRows) {
+    if (!vendorMap[r.vendor]) vendorMap[r.vendor] = [];
+    vendorMap[r.vendor].push(r);
+  }
+
+  let totalLobs = 0;
+  for (const v of Object.keys(vendorMap).sort()) {
+    const lobs = vendorMap[v].sort((a, b) => a.lob.localeCompare(b.lob));
+
+    // Aggregate vendor totals from vendorRows
+    let rcv=0, hndl=0, fc_v=0, sta=0, base=0;
+    let fcht_n=0, fcht_d=0, aht_n=0, aht_d=0;
+    let sch_s=0, sch_nz=0, pres_s=0, adh_n=0, adh_d=0, vhc_s=0, vhc_count=0;
+    for (const r of lobs) {
+      rcv  += r.rcv   || 0;
+      hndl += r.hndl  || 0;
+      fc_v += r.fcvol || 0;
+      if (r.fcht && r.fcvol) { fcht_n += r.fcht * r.fcvol; fcht_d += r.fcvol; }
+      if (r.aht  && r.hndl)  { aht_n  += r.aht  * r.hndl;  aht_d  += r.hndl; }
+      if (r.sched) { sch_s  += r.sched; sch_nz++; }
+      if (r.pres)    pres_s += r.pres;
+      if (r.adh != null && r.sched) { adh_n += r.adh * r.sched; adh_d += r.sched; }
+      const lobHcVal = hcReq(normFcvol(r), r.aht, chanConc(r.channel));
+      if (lobHcVal != null) { vhc_s += lobHcVal; vhc_count++; }
+    }
+    const vSL   = fc_v   > 0 ? rcv   / fc_v   * 100      : null;
+    const vFcv  = fc_v   > 0 ? rcv   / fc_v   * 100      : null;
+    const vFcht = fcht_d > 0 ? fcht_n / fcht_d            : null;
+    const vAht  = aht_d  > 0 ? aht_n  / aht_d             : null;
+    const vSch  = sch_nz > 0 ? Math.round(sch_s)  : null;
+    const vPres = sch_nz > 0 ? Math.round(pres_s) : null;
+    const vAbs  = sch_s  > 0 ? (sch_s - pres_s) / sch_s * 100 : null;
+    const vAdh  = adh_d  > 0 ? adh_n / adh_d               : null;
+    const vhc   = vhc_count > 0 ? Math.round(vhc_s) : null;
+
+    const vtr = document.createElement('tr');
+    vtr.className = 'channel-row';
+    vtr.innerHTML =
+      `<td>${v}</td>` +
+      cell(vSL  != null ? vSL.toFixed(1)+'%'  : '—', colorSL(vSL)) +
+      `<td>${fc_v > 0 ? Math.round(fc_v).toLocaleString() : '—'}</td>` +
+      `<td>${rcv  > 0 ? Math.round(rcv).toLocaleString()  : '—'}</td>` +
+      `<td>${hndl > 0 ? Math.round(hndl).toLocaleString() : '—'}</td>` +
+      cell(vFcv != null ? vFcv.toFixed(1)+'%' : '—', colorFCV(vFcv)) +
+      `<td>${fSecs(vFcht)}</td>` +
+      `<td>${fSecs(vAht)}</td>` +
+      `<td>${vSch  != null ? vSch  : '—'}</td>` +
+      `<td>${vPres != null ? vPres : '—'}</td>` +
+      cell(vAbs != null ? vAbs.toFixed(1)+'%' : '—', colorAbs(vAbs)) +
+      cell(vAdh != null ? vAdh.toFixed(1)+'%' : '—', colorAdh(vAdh)) +
+      `<td>${vhc ?? '—'}</td>` + ovsUndCell(vSch, vhc);
+    tbody.appendChild(vtr);
+
+    for (const r of lobs) {
+      const lhc = hcReq(normFcvol(r), r.aht, chanConc(r.channel));
+      const tr  = document.createElement('tr');
+      tr.className = 'lob-row';
+      tr.innerHTML =
+        `<td style="padding-left:24px;">${r.lob}</td>` +
+        cell(r.sl  != null ? r.sl.toFixed(1)+'%'  : '—', colorSL(r.sl)) +
+        `<td>${r.fcvol != null ? r.fcvol.toLocaleString() : '—'}</td>` +
+        `<td>${r.rcv   != null ? r.rcv.toLocaleString()   : '—'}</td>` +
+        `<td>${r.hndl  != null ? r.hndl.toLocaleString()  : '—'}</td>` +
+        cell(r.fcv != null ? r.fcv.toFixed(1)+'%' : '—', colorFCV(r.fcv)) +
+        `<td>${fSecs(r.fcht)}</td>` +
+        `<td>${fSecs(r.aht)}</td>` +
+        `<td>${r.sched != null ? r.sched : '—'}</td>` +
+        `<td>${r.pres  != null ? r.pres  : '—'}</td>` +
+        cell(r.abs != null ? r.abs.toFixed(1)+'%' : '—', colorAbs(r.abs)) +
+        cell(r.adh != null ? r.adh.toFixed(1)+'%' : '—', colorAdh(r.adh)) +
+        `<td>${lhc ?? '—'}</td>` + ovsUndCell(r.sched, lhc);
+      tbody.appendChild(tr);
+      totalLobs++;
+    }
+  }
+  const vendorCount = Object.keys(vendorMap).length;
+  document.getElementById('vendor-count').textContent =
+    `${vendorCount} vendor${vendorCount !== 1 ? 's' : ''} · ${totalLobs} LOBs`;
+}
+
+// ── Executive Summary ─────────────────────────────────────────────────────────
+function renderExecSummary() {
+  if (!entRows.length) return;
+
+  // ── Enterprise-wide totals from LOB rows ────────────────────────────────────
+  const lobs = entRows.filter(r => !r.isChannel);
+  let totFcv=0, totRcv=0, totHndl=0, totSta=0, totBase=0;
+  let fcht_n=0, fcht_d=0, aht_n=0, aht_d=0, adh_n=0, adh_d=0;
+  let totSch=0, totSchNz=0, totPres=0;
+  let hcReq_n=0, hcReq_count=0;
+  for (const r of lobs) {
+    totFcv  += r.fcvol  || 0;
+    totRcv  += r.rcv    || 0;
+    totHndl += r.hndl   || 0;
+    totSta  += r._sta   || 0;
+    totBase += r._base  || 0;
+    if (r.fcht && r.fcvol) { fcht_n += r.fcht * r.fcvol; fcht_d += r.fcvol; }
+    if (r.aht  && r.hndl)  { aht_n  += r.aht  * r.hndl;  aht_d  += r.hndl;  }
+    if (r.sched != null) { totSch += r.sched; totSchNz++; }
+    if (r.pres  != null)   totPres += r.pres;
+    if (r.adh != null && r.sched) { adh_n += r.adh * r.sched; adh_d += r.sched; }
+    const lobHc = hcReq(normFcvol(r), r.aht, chanConc(r.channel));
+    if (lobHc != null) { hcReq_n += lobHc; hcReq_count++; }
+  }
+  // SL = STA Vol ÷ STA Base (contacts answered in threshold ÷ contacts offered), hard-capped at 100%
+  const entSL    = totBase > 0 ? Math.min(totSta / totBase * 100, 100) : null;
+  const entFcvp  = totFcv  > 0 ? totRcv / totFcv * 100 : null;
+  const entFcht  = fcht_d  > 0 ? fcht_n / fcht_d : null;
+  const entAht   = aht_d   > 0 ? aht_n  / aht_d  : null;
+  // SUM of LOB-level avg schedules = total agents deployed (comparable to entHc which is also a total)
+  const entSch   = totSchNz > 0 ? Math.round(totSch) : null;
+  const entAdh   = adh_d > 0 ? adh_n / adh_d : null;
+  const entAbs   = totSch > 0 ? (totSch - totPres) / totSch * 100 : null;
+  // HC Req = sum of per-LOB HC requirements (same scale as Schedule HC sum)
+  const entHcReq = hcReq_count > 0 ? Math.round(hcReq_n) : null;
+  const entOvUn  = (entSch != null && entHcReq != null) ? entSch - entHcReq : null;
+
+  // ── KPI Scorecards ──────────────────────────────────────────────────────────
+  function kpiCard(label, value, sub, colorClass) {
+    return `<div class="kpi-card ${colorClass}">
+      <div class="kpi-label">${label}</div>
+      <div class="kpi-value">${value}</div>
+      <div class="kpi-sub">${sub}</div>
+    </div>`;
+  }
+  const slColor  = entSL  == null ? 'kpi-neutral' : entSL  >= 80 ? 'kpi-green' : entSL  >= 70 ? 'kpi-yellow' : 'kpi-red';
+  const adhColor = entAdh == null ? 'kpi-neutral' : entAdh >= 85 ? 'kpi-green' : entAdh >= 75 ? 'kpi-yellow' : 'kpi-red';
+  const absColor = entAbs == null ? 'kpi-neutral' : entAbs <  5  ? 'kpi-green' : entAbs <= 10 ? 'kpi-yellow' : 'kpi-red';
+  const ouColor   = entOvUn == null ? 'kpi-neutral' : entOvUn >= 0 ? 'kpi-green' : 'kpi-red';
+  const ovSign    = entOvUn != null && entOvUn > 0 ? '+' : '';
+  const fcvpColor = entFcvp == null ? 'kpi-neutral' : entFcvp >= 95 ? 'kpi-green' : entFcvp >= 85 ? 'kpi-yellow' : 'kpi-red';
+
+  document.getElementById('exec-kpis').innerHTML =
+    kpiCard('Total FC Volume',    totFcv    > 0    ? Math.round(totFcv).toLocaleString() : '—', 'Forecasted contacts', 'kpi-neutral') +
+    kpiCard('FCV %',              entFcvp  != null ? entFcvp.toFixed(1) + '%' : '—', 'Received ÷ Forecasted vol', fcvpColor) +
+    kpiCard('Enterprise SL %',    entSL    != null ? entSL.toFixed(1)  + '%' : '—', 'Answered in SLA ÷ Offered', slColor) +
+    kpiCard('Weighted FC AHT',    entFcht  != null ? fSecs(entFcht)          : '—', 'FC AHT weighted by volume', 'kpi-neutral') +
+    kpiCard('AHT w/ ACW',         entAht   != null ? fSecs(entAht)           : '—', 'Actual AHT weighted by contacts', 'kpi-neutral') +
+    kpiCard('Schedule HC',        entSch   != null ? entSch                  : '—', 'Total agents scheduled', 'kpi-neutral') +
+    kpiCard('Base HC Req',        entHcReq != null ? entHcReq                : '—', 'Total HC required across LOBs', 'kpi-neutral') +
+    kpiCard('Adherence %',        entAdh   != null ? entAdh.toFixed(1) + '%' : '—', 'Adh mins ÷ sched time', adhColor) +
+    kpiCard('Absence %',          entAbs   != null ? entAbs.toFixed(1) + '%' : '—', 'Schedule − Present', absColor) +
+    kpiCard('Net Overs / Unders', entOvUn  != null ? ovSign + entOvUn        : '—', 'Schedule − Avg HC Req', ouColor);
+
+  // ── Channel Performance Table ───────────────────────────────────────────────
+  const chTbody = document.getElementById('exec-channel-body');
+  chTbody.innerHTML = '';
+
+  // If slicers collapsed channel rows, fall back to re-aggregating from lob rows by channel
+  const byChannel = {};
+  for (const r of lobs) {
+    const ch = r.channel || '(Unknown)';
+    if (!byChannel[ch]) byChannel[ch] = { fcv:0, rcv:0, hndl:0, sta:0, base:0, fcht_n:0, fcht_d:0, aht_n:0, aht_d:0, sch:0, schNz:0, adh_n:0, adh_d:0, hc_n:0, hc_count:0 };
+    const d = byChannel[ch];
+    d.fcv  += r.fcvol || 0; d.rcv  += r.rcv   || 0; d.hndl += r.hndl  || 0;
+    d.sta  += r._sta  || 0; d.base += r._base || 0;
+    if (r.fcht && r.fcvol) { d.fcht_n += r.fcht * r.fcvol; d.fcht_d += r.fcvol; }
+    if (r.aht  && r.hndl)  { d.aht_n  += r.aht  * r.hndl;  d.aht_d  += r.hndl;  }
+    if (r.sched != null) { d.sch += r.sched; d.schNz++; }
+    if (r.adh != null && r.sched) { d.adh_n += r.adh * r.sched; d.adh_d += r.sched; }
+    const lobHc = hcReq(normFcvol(r), r.aht, chanConc(r.channel));
+    if (lobHc != null) { d.hc_n += lobHc; d.hc_count++; }
+  }
+
+  for (const [ch, d] of Object.entries(byChannel).sort((a,b) => a[0].localeCompare(b[0]))) {
+    const sl   = d.base > 0   ? Math.min(d.sta / d.base * 100, 100) : null;
+    const fcvp = d.fcv  > 0   ? d.rcv / d.fcv * 100                 : null;
+    const fcht = d.fcht_d > 0 ? d.fcht_n / d.fcht_d                 : null;
+    const aht  = d.aht_d  > 0 ? d.aht_n  / d.aht_d                 : null;
+    const sch  = d.schNz  > 0 ? Math.round(d.sch)                   : null;
+    const adh  = d.adh_d  > 0 ? d.adh_n  / d.adh_d                 : null;
+    const hc   = d.hc_count > 0 ? Math.round(d.hc_n) : null;
+    const ou   = (sch != null && hc != null) ? sch - hc : null;
+    const slCls  = colorSL(sl),  adhCls = colorAdh(adh);
+    const fcvCls = fcvp == null ? '' : fcvp >= 95 ? 'green' : fcvp >= 85 ? 'yellow' : 'red';
+    const statusEmoji = sl == null ? '—' : sl >= 80 && (adh == null || adh >= 75) ? '🟢 On Track' : sl >= 70 ? '🟡 At Risk' : '🔴 Off Target';
+    const tr = document.createElement('tr');
+    tr.className = 'lob-row';
+    tr.innerHTML =
+      `<td style="font-weight:700;">${ch}</td>` +
+      `<td>${d.fcv > 0 ? Math.round(d.fcv).toLocaleString() : '—'}</td>` +
+      cell(fcvp != null ? fcvp.toFixed(1)+'%' : '—', fcvCls) +
+      cell(sl   != null ? sl.toFixed(1)+'%'   : '—', slCls) +
+      `<td>${fSecs(fcht)}</td>` +
+      `<td>${fSecs(aht)}</td>` +
+      `<td>${sch != null ? sch : '—'}</td>` +
+      cell(adh != null ? adh.toFixed(1)+'%' : '—', adhCls) +
+      (ou != null ? `<td style="color:${ou>=0?'#155724':'#8b1a1a'};font-weight:600;">${ou>0?'+':''}${ou}</td>` : '<td>—</td>') +
+      `<td>${statusEmoji}</td>`;
+    chTbody.appendChild(tr);
+  }
+
+  // ── Outlier Report ──────────────────────────────────────────────────────────
+  const OUTLIERS = [];
+  for (const r of lobs) {
+    const hc = hcReq(normFcvol(r), r.aht, chanConc(r.channel));
+    const ou = (r.sched != null && hc != null) ? r.sched - hc : null;
+
+    if (r.sl  != null && r.sl  < 70)  OUTLIERS.push({ lob:r.lob, ch:r.channel, vd:r.vendor, issue:'Low Service Level',  val:r.sl.toFixed(1)+'%',  threshold:'≥ 80%', sev:'critical' });
+    else if (r.sl != null && r.sl < 80) OUTLIERS.push({ lob:r.lob, ch:r.channel, vd:r.vendor, issue:'SL Near Threshold', val:r.sl.toFixed(1)+'%', threshold:'≥ 80%', sev:'warning' });
+
+    if (r.adh != null && r.adh < 75)  OUTLIERS.push({ lob:r.lob, ch:r.channel, vd:r.vendor, issue:'Low Adherence',       val:r.adh.toFixed(1)+'%', threshold:'≥ 85%', sev:'critical' });
+    else if (r.adh != null && r.adh < 85) OUTLIERS.push({ lob:r.lob, ch:r.channel, vd:r.vendor, issue:'Adherence At Risk',  val:r.adh.toFixed(1)+'%', threshold:'≥ 85%', sev:'warning' });
+
+    if (r.abs != null && r.abs > 15)  OUTLIERS.push({ lob:r.lob, ch:r.channel, vd:r.vendor, issue:'High Absence Rate',   val:r.abs.toFixed(1)+'%', threshold:'< 10%', sev:'critical' });
+    else if (r.abs != null && r.abs > 10) OUTLIERS.push({ lob:r.lob, ch:r.channel, vd:r.vendor, issue:'Elevated Absence',   val:r.abs.toFixed(1)+'%', threshold:'< 10%', sev:'warning' });
+
+    if (ou != null && ou < -3)        OUTLIERS.push({ lob:r.lob, ch:r.channel, vd:r.vendor, issue:'Understaffed',         val:String(ou),           threshold:'≥ 0',   sev:'critical' });
+    else if (ou != null && ou < 0)    OUTLIERS.push({ lob:r.lob, ch:r.channel, vd:r.vendor, issue:'Slightly Under HC',    val:String(ou),           threshold:'≥ 0',   sev:'warning' });
+  }
+
+  const outBody = document.getElementById('exec-outlier-body');
+  const outWrap = document.getElementById('exec-outlier-wrap');
+  const noOut   = document.getElementById('exec-no-outliers');
+  outBody.innerHTML = '';
+
+  if (OUTLIERS.length === 0) {
+    noOut.style.display = 'block';
+    outWrap.style.display = 'none';
+  } else {
+    noOut.style.display = 'none';
+    outWrap.style.display = '';
+    for (const o of OUTLIERS.sort((a,b) => (a.sev==='critical'?0:1) - (b.sev==='critical'?0:1))) {
+      const tr = document.createElement('tr');
+      tr.className = 'lob-row';
+      tr.innerHTML =
+        `<td style="font-weight:600;">${o.lob}</td>` +
+        `<td>${o.ch  || '—'}</td>` +
+        `<td>${o.vd  || '—'}</td>` +
+        `<td>${o.issue}</td>` +
+        `<td style="font-weight:700;">${o.val}</td>` +
+        `<td style="color:#5a7a90;">${o.threshold}</td>` +
+        `<td><span class="sev-${o.sev}">${o.sev === 'critical' ? '🔴 Critical' : '🟡 Warning'}</span></td>`;
+      outBody.appendChild(tr);
+    }
+  }
+
+  // ── Performance Recovery Recommendations ─────────────────────────────────────
+  const RECS = [];
+
+  // 1. Severely understaffed channels
+  for (const [ch, d] of Object.entries(byChannel)) {
+    const sch = d.schNz   > 0 ? Math.round(d.sch) : null;
+    const hc  = d.hc_count > 0 ? Math.round(d.hc_n) : null;
+    const ou  = sch != null && hc != null ? sch - hc : null;
+    if (ou != null && ou < -3)
+      RECS.push({ pri:1, html:`⚠️ <b>${ch}</b> is understaffed by <b>${Math.abs(ou)}</b> agents. Consider emergency HC augmentation or shift extensions.` });
+  }
+
+  // 2. Critical Service Level channels (< 70%)
+  for (const [ch, d] of Object.entries(byChannel)) {
+    const sl = d.base > 0 ? Math.min(d.sta / d.base * 100, 100) : null;
+    if (sl != null && sl < 70)
+      RECS.push({ pri:2, html:`🔴 <b>${ch}</b> Service Level at <b>${sl.toFixed(1)}%</b>. Prioritise routing and reallocate agents from over-staffed channels.` });
+  }
+
+  // 3. High enterprise absence (> 15%)
+  if (entAbs != null && entAbs > 15)
+    RECS.push({ pri:3, html:`🔴 Enterprise Absence rate at <b>${entAbs.toFixed(1)}%</b> — above 15% threshold. Engage HR for same-day replacement pool activation.` });
+
+  // 4. Low adherence channels (< 75%)
+  for (const [ch, d] of Object.entries(byChannel)) {
+    const adh = d.adh_d > 0 ? d.adh_n / d.adh_d : null;
+    if (adh != null && adh < 75)
+      RECS.push({ pri:4, html:`🟡 <b>${ch}</b> Adherence at <b>${adh.toFixed(1)}%</b>. Real-time supervisor alerts and targeted coaching recommended.` });
+  }
+
+  // 5. Demand spike — FCV > 110%
+  for (const [ch, d] of Object.entries(byChannel)) {
+    const fcvp = d.fcv > 0 ? d.rcv / d.fcv * 100 : null;
+    if (fcvp != null && fcvp > 110)
+      RECS.push({ pri:5, html:`📈 <b>${ch}</b> receiving <b>${fcvp.toFixed(1)}%</b> of forecast — possible unforecasted demand spike. Validate with business operations.` });
+  }
+
+  // 6. Overstaffed channels with reallocation opportunity (> 10 overs)
+  for (const [ch, d] of Object.entries(byChannel)) {
+    const sch = d.schNz   > 0 ? Math.round(d.sch) : null;
+    const hc  = d.hc_count > 0 ? Math.round(d.hc_n) : null;
+    const ou  = sch != null && hc != null ? sch - hc : null;
+    if (ou != null && ou > 10)
+      RECS.push({ pri:6, html:`💡 <b>${ch}</b> has <b>+${ou}</b> agents over HC Req. Consider VTO offers or cross-skill reallocation to understaffed queues.` });
+  }
+
+  const recEl = document.getElementById('exec-recommendations');
+  if (RECS.length === 0) {
+    recEl.innerHTML = `<p style="color:#155724;font-weight:600;">✅ All enterprise metrics within acceptable range — no immediate recovery actions required.</p>`;
+  } else {
+    RECS.sort((a, b) => a.pri - b.pri);
+    recEl.innerHTML = RECS.map(r => `<p style="margin-bottom:10px;">${r.html}</p>`).join('');
+  }
+}
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  event.currentTarget.classList.add('active');
+}
+</script>
+</body>
+</html>

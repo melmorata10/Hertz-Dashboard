@@ -10,13 +10,13 @@ __pycache__/
 # Streamlit cache
 .streamlit/cache/
 
+# Node
+node_modules/
+package-lock.json
+
+# Netlify local artefacts
+.netlify/
+
 # OS
 .DS_Store
 Thumbs.db
-
-# Temp / junk files (keep requirements.txt!)
-btn.textContent
-pd.DataFrame
-str
-this.textContent
-C:UsersmelmoDesktopskill_map_tmp.txt
