@@ -1058,6 +1058,76 @@ def _summary_dialog(df: pd.DataFrame, table_key: str):
     )
 
 
+@st.dialog("⏱️ 30-Minute Interval Breakdown", width="large")
+def _interval_dialog(df: pd.DataFrame):
+    """Render interval table as static HTML — no internal scroll, screenshot-ready."""
+    display_cols = ["Interval", "LOB", "Vendor", "NCO", "NCH",
+                    "Target AHT", "AHT", "AHT Var%",
+                    "ABN", "Target ABN%", "ABN%", "Target ASA", "ASA"]
+    present = [c for c in display_cols if c in df.columns]
+
+    HDR_BG    = "#1a3a5c"
+    GREEN_BG  = "#C8F0C8"; GREEN_FG  = "#1a5e1a"
+    YELLOW_BG = "#FFF4CC"; YELLOW_FG = "#7a5c00"
+    RED_BG    = "#FFD0D0"; RED_FG    = "#8b0000"
+
+    def _cell_color(col, val, row):
+        if pd.isna(val):
+            return None, None
+        if col == "AHT Var%":
+            if val <= 0:  return GREEN_BG,  GREEN_FG
+            if val <= 5:  return YELLOW_BG, YELLOW_FG
+            return RED_BG, RED_FG
+        if col in ("ABN%", "ASA"):
+            tgt_col = "Target ABN%" if col == "ABN%" else "Target ASA"
+            tgt = row.get(tgt_col, float("nan"))
+            if pd.notna(tgt):
+                if val <= tgt:        return GREEN_BG,  GREEN_FG
+                if val <= tgt * 1.1:  return YELLOW_BG, YELLOW_FG
+                return RED_BG, RED_FG
+        return None, None
+
+    def _fmt_cell(col, val):
+        if col in ("Target AHT", "AHT"):               return _fmt_seconds_int(val)
+        if col in ("Target ASA", "ASA"):               return _fmt_seconds(val)
+        if col in ("AHT Var%", "ABN%", "Target ABN%"): return _fmt_pct(val)
+        if col in ("NCO", "NCH", "ABN"):               return _fmt_int(val)
+        return str(val) if pd.notna(val) else "—"
+
+    ths = "".join(
+        f'<th style="background:{HDR_BG};color:white;padding:6px 10px;'
+        f'border:1px solid #667;white-space:nowrap;font-size:12px;font-weight:700">{c}</th>'
+        for c in present
+    )
+    rows_html = [f"<tr>{ths}</tr>"]
+    for _, row in df.iterrows():
+        tds = []
+        for col in present:
+            val = row.get(col, float("nan"))
+            try:
+                num_val = float(val)
+            except (TypeError, ValueError):
+                num_val = float("nan")
+            bg, fg = _cell_color(col, num_val, row)
+            cell_bg = bg or "white"
+            cell_fg = fg or "inherit"
+            align = "left" if col in ("LOB", "Vendor", "Interval") else "center"
+            tds.append(
+                f'<td style="background:{cell_bg};color:{cell_fg};padding:5px 9px;'
+                f'border:1px solid #dde;text-align:{align};font-size:12px;white-space:nowrap">'
+                f'{_fmt_cell(col, val)}</td>'
+            )
+        rows_html.append(f"<tr>{''.join(tds)}</tr>")
+
+    st.markdown(
+        '<div style="overflow-x:visible">'
+        '<table style="border-collapse:collapse;font-family:Inter,Arial,sans-serif;width:100%;table-layout:auto">'
+        + "".join(rows_html)
+        + "</table></div>",
+        unsafe_allow_html=True,
+    )
+
+
 def _style_interval(df: pd.DataFrame):
     """Same colour rules as the summary table — no bold Grand Total row."""
     styler = df.style
@@ -1554,7 +1624,6 @@ with tab1:
             vendors_to_show = [v for v in vendor_order if v in vendor_summaries]
             vendors_to_show += [v for v in vendor_summaries if v not in vendor_order]
             for vendor in vendors_to_show:
-                st.markdown(f"#### {vendor}")
                 vdf = vendor_summaries[vendor]
                 # Hide LOBs in _HIDDEN_LOBS (keep Grand Total)
                 vdf = vdf[
@@ -1564,6 +1633,15 @@ with tab1:
                 if vendor == "HERTZ":
                     mask = (vdf["LOB"] == "Grand Total") | (vdf["NCO"].fillna(0) > 0)
                     vdf = vdf[mask].reset_index(drop=True)
+
+                v_hdr, v_btn = st.columns([9, 1])
+                with v_hdr:
+                    st.markdown(f"#### {vendor}")
+                with v_btn:
+                    st.markdown("<div style='padding-top:6px'></div>", unsafe_allow_html=True)
+                    if st.button("⛶", key=f"fs_vendor_{vendor}", help="Expand table to full screen", use_container_width=True):
+                        _summary_dialog(vdf, f"vendor_{vendor}")
+
                 _display_summary(vdf, table_key=f"vendor_{vendor}")
                 _display_abn_analysis(vdf, interval_df=interval_df, vendor=vendor)
 
@@ -1595,7 +1673,18 @@ with tab2:
                 key="vendor_filter",
             )
 
-        st.subheader("30-Minute Interval Breakdown")
+        iv_hdr, iv_btn = st.columns([9, 1])
+        with iv_hdr:
+            st.subheader("30-Minute Interval Breakdown")
+        with iv_btn:
+            st.markdown("<div style='padding-top:8px'></div>", unsafe_allow_html=True)
+            _iv_filtered = interval_df.copy()
+            if lob_sel:
+                _iv_filtered = _iv_filtered[_iv_filtered["LOB"].isin(lob_sel)]
+            if vendor_sel:
+                _iv_filtered = _iv_filtered[_iv_filtered["Vendor"].isin(vendor_sel)]
+            if st.button("⛶", key="fs_interval", help="Expand table to full screen", use_container_width=True):
+                _interval_dialog(_iv_filtered)
         _display_interval(interval_df, lob_sel, vendor_sel)
     elif data_ok:
         st.info("No interval data available in the loaded files.")
