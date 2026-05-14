@@ -946,8 +946,21 @@ def _display_summary(df: pd.DataFrame, table_key: str = "main"):
     )
 
 
+def _merge_editor_edits(df: pd.DataFrame, table_key: str) -> pd.DataFrame:
+    """Overlay user edits from st.data_editor session state onto df."""
+    state = st.session_state.get(f"editor_{table_key}", {})
+    edited = state.get("edited_rows", {})
+    df = df.copy()
+    for row_idx_str, changes in edited.items():
+        row_idx = int(row_idx_str)
+        for col, val in changes.items():
+            if row_idx < len(df) and col in df.columns:
+                df.at[row_idx, col] = val
+    return df
+
+
 @st.dialog("📊 Performance by Line of Business", width="large")
-def _summary_dialog(df: pd.DataFrame):
+def _summary_dialog(df: pd.DataFrame, table_key: str):
     """Render full table as static HTML — no internal scroll, screenshot-ready."""
     df = df.copy()
     df["Analysis"] = df.apply(_abn_driver_brief, axis=1)
@@ -955,6 +968,9 @@ def _summary_dialog(df: pd.DataFrame):
     gt   = df[df["LOB"] == "Grand Total"]
     lobs = df[df["LOB"] != "Grand Total"].sort_values("NCO", ascending=False)
     df   = pd.concat([lobs, gt], ignore_index=True)
+
+    # Overlay any user edits from the live data_editor
+    df = _merge_editor_edits(df, table_key)
 
     display_cols = ["LOB", "NCO", "NCH", "Target AHT", "AHT", "AHT Var%",
                     "ABN", "Target ABN%", "ABN%", "Target ASA", "ASA", "Analysis"]
@@ -1026,8 +1042,8 @@ def _summary_dialog(df: pd.DataFrame):
         rows_html.append(f"<tr>{''.join(tds)}</tr>")
 
     table_html = (
-        '<div style="overflow-x:auto">'
-        '<table style="border-collapse:collapse;font-family:Inter,Arial,sans-serif;width:100%">'
+        '<div style="overflow-x:visible">'
+        '<table style="border-collapse:collapse;font-family:Inter,Arial,sans-serif;width:100%;table-layout:auto">'
         + "".join(rows_html)
         + "</table></div>"
     )
@@ -1500,7 +1516,7 @@ with tab1:
         with btn_col:
             st.markdown("<div style='padding-top:8px'></div>", unsafe_allow_html=True)
             if st.button("⛶", key="fs_main", help="Expand table to full screen", use_container_width=True):
-                _summary_dialog(_main_df)
+                _summary_dialog(_main_df, "main")
 
         _display_summary(_main_df, table_key="main")
 
