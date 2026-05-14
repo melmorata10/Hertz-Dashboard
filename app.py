@@ -996,6 +996,17 @@ def _summary_dialog(df: pd.DataFrame, table_key: str):
             if val <= 0:  return GREEN_BG,  GREEN_FG
             if val <= 5:  return YELLOW_BG, YELLOW_FG
             return RED_BG, RED_FG
+        if col == "AHT":
+            # Color AHT the same shade as its variance (mirrors main table _colour_row)
+            try:
+                aht_var = float(row.get("AHT Var%", float("nan")))
+            except (TypeError, ValueError):
+                aht_var = float("nan")
+            if pd.isna(aht_var):
+                return None, None
+            if aht_var <= 0:  return GREEN_BG,  GREEN_FG
+            if aht_var <= 5:  return YELLOW_BG, YELLOW_FG
+            return RED_BG, RED_FG
         if col in ("ABN%", "ASA"):
             tgt_col = "Target ABN%" if col == "ABN%" else "Target ASA"
             tgt = row.get(tgt_col, float("nan"))
@@ -1105,6 +1116,16 @@ def _interval_dialog(df: pd.DataFrame):
         if col == "AHT Var%":
             if val <= 0:  return GREEN_BG,  GREEN_FG
             if val <= 5:  return YELLOW_BG, YELLOW_FG
+            return RED_BG, RED_FG
+        if col == "AHT":
+            try:
+                aht_var = float(row.get("AHT Var%", float("nan")))
+            except (TypeError, ValueError):
+                aht_var = float("nan")
+            if pd.isna(aht_var):
+                return None, None
+            if aht_var <= 0:  return GREEN_BG,  GREEN_FG
+            if aht_var <= 5:  return YELLOW_BG, YELLOW_FG
             return RED_BG, RED_FG
         if col in ("ABN%", "ASA"):
             tgt_col = "Target ABN%" if col == "ABN%" else "Target ASA"
