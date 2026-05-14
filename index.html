@@ -767,6 +767,32 @@ function copyShareLink() {
   setTimeout(() => { btn.textContent = '📋 Copy link'; }, 2000);
 }
 
+// ── Rebuild lobMeta + slicerOpts from cached rows (used after shared-link restore) ──
+function rebuildSlicerOptsFromCache() {
+  if (!cfFcastCache) return;
+  lobMeta    = {};
+  slicerOpts = { channels: new Set(), vendors: new Set(), brands: new Set(), dates: new Map() };
+  const { rows, cLob, cCh, cDate2, cVendor, cBrand } = cfFcastCache;
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r) continue;
+    const lob     = r[cLob]    != null ? String(r[cLob]).trim()    : '';
+    const channel = r[cCh]     != null ? String(r[cCh]).trim()     : '';
+    const brand   = r[cBrand]  != null ? String(r[cBrand]).trim()  : '';
+    const vendor  = r[cVendor] != null ? String(r[cVendor]).trim() : '';
+    const date2   = r[cDate2];
+    if (lob && !lobMeta[lob]) lobMeta[lob] = { channel, vendor, brand };
+    if (channel) slicerOpts.channels.add(channel);
+    if (vendor)  slicerOpts.vendors.add(vendor);
+    if (brand)   slicerOpts.brands.add(brand);
+    if (date2 != null && !isNaN(date2)) {
+      const serial = Math.floor(date2);
+      if (serial > 0 && !slicerOpts.dates.has(serial))
+        slicerOpts.dates.set(serial, excelDateToStr(serial));
+    }
+  }
+}
+
 // ── Auto-load from shareable link ─────────────────────────────────────────────
 (async function checkSharedLink() {
   const key = new URLSearchParams(location.search).get('r');
@@ -781,6 +807,7 @@ function copyShareLink() {
     const payload = await decompressData(bytes);
     cfFcastCache = { rows: payload.fcast.rows, ...payload.fcast.cols };
     cfSchedCache = payload.sched ? { rows: payload.sched.rows, ...payload.sched.cols } : null;
+    rebuildSlicerOptsFromCache();
     rebuildEntRows('', '', '', '', '');
     rebuildIntervalRows('', '', '', '', '');
     rebuildVendorRows('', '', '', '', '');
