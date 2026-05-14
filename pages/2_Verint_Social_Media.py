@@ -1,4 +1,5 @@
 import io
+import os
 import subprocess
 import sys
 from datetime import date, timedelta
@@ -238,12 +239,17 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown("### ⚙️ Options")
-    _show_browser = st.checkbox(
-        "Show browser window",
-        value=True,
-        help="Uncheck to run silently in the background (headless). "
-             "Keep checked to watch the extraction happen live.",
-    )
+    _on_cloud = os.getenv("HOME") == "/home/appuser"
+    if _on_cloud:
+        _show_browser = False
+        st.caption("🌐 Running on cloud — browser is headless.")
+    else:
+        _show_browser = st.checkbox(
+            "Show browser window",
+            value=True,
+            help="Uncheck to run silently in the background (headless). "
+                 "Keep checked to watch the extraction happen live.",
+        )
 
     st.markdown("---")
 

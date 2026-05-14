@@ -11,3 +11,6 @@ libxcomposite1
 libxdamage1
 libxfixes3
 libxkbcommon0
+libcairo2
+libpango-1.0-0
+libpangocairo-1.0-0
