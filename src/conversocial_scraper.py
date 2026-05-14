@@ -245,35 +245,64 @@ class ConversocialScraper:
             if on_status:
                 on_status("🔐 Logging in to Conversocial automatically…")
             try:
-                # Step 1: fill username and press Enter to submit
+                # Step 1: fill username and click/submit
                 page.wait_for_selector(
                     'input[name="username"], input[type="text"], input[type="email"]',
-                    timeout=10_000,
+                    timeout=15_000,
                 )
                 page.fill(
                     'input[name="username"], input[type="text"], input[type="email"]',
                     username,
                 )
-                page.wait_for_timeout(400)
-                page.keyboard.press("Enter")
-                page.wait_for_timeout(2_000)
-
-                # Step 2: fill password and press Enter to submit
-                try:
-                    page.wait_for_selector('input[type="password"]', timeout=10_000)
-                    page.fill('input[type="password"]', password)
-                    page.wait_for_timeout(400)
+                page.wait_for_timeout(600)
+                # Try submit button first, fall back to Enter
+                _submitted = False
+                for _sel in [
+                    'button[type="submit"]', 'input[type="submit"]',
+                    'button:has-text("Next")', 'button:has-text("Continue")',
+                    'button:has-text("Sign in")', 'button:has-text("Log in")',
+                    'button:has-text("Login")',
+                ]:
+                    try:
+                        _btn = page.locator(_sel)
+                        if _btn.count() > 0 and _btn.first.is_visible(timeout=1_000):
+                            _btn.first.click()
+                            _submitted = True
+                            break
+                    except Exception:
+                        continue
+                if not _submitted:
                     page.keyboard.press("Enter")
-                    page.wait_for_timeout(2_000)
-                except Exception as _e2:
-                    Path(".streamlit/debug_login_step2.txt").write_text(str(_e2), encoding="utf-8")
+                page.wait_for_timeout(2_500)
 
-                page.screenshot(path=".streamlit/debug_login_after.png")
+                # Step 2: fill password and click/submit
+                page.wait_for_selector('input[type="password"]', timeout=15_000)
+                page.fill('input[type="password"]', password)
+                page.wait_for_timeout(600)
+                _submitted2 = False
+                for _sel in [
+                    'button[type="submit"]', 'input[type="submit"]',
+                    'button:has-text("Sign in")', 'button:has-text("Log in")',
+                    'button:has-text("Login")', 'button:has-text("Continue")',
+                ]:
+                    try:
+                        _btn = page.locator(_sel)
+                        if _btn.count() > 0 and _btn.first.is_visible(timeout=1_000):
+                            _btn.first.click()
+                            _submitted2 = True
+                            break
+                    except Exception:
+                        continue
+                if not _submitted2:
+                    page.keyboard.press("Enter")
+                page.wait_for_timeout(3_000)
 
-                # Wait for redirect away from login
+                # Wait for redirect away from login (handles SSO multi-step redirects)
                 page.wait_for_function(
-                    "() => !window.location.href.includes('/login')",
-                    timeout=60_000,
+                    "() => window.location.href.includes('conversocial.com') && "
+                    "!window.location.href.includes('/login') && "
+                    "!window.location.href.includes('signin')",
+                    timeout=90_000,
                 )
                 page.wait_for_load_state("networkidle", timeout=30_000)
                 return
