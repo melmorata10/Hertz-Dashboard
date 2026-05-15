@@ -280,26 +280,37 @@ class ConversocialScraper:
                 pass
             page.wait_for_timeout(1_000)
 
-            # Step 2 — password (field may be hidden on SSO pages)
+            # Step 2 — password
+            # Wait for the password field to become visible (hash-routed forms
+            # show it after the username step without a full page reload)
+            pwd_el = None
             try:
-                page.wait_for_selector('input[type="password"]', state="visible", timeout=8_000)
+                pwd_el = page.wait_for_selector(
+                    'input[type="password"]', state="visible", timeout=10_000
+                )
             except Exception:
-                page.wait_for_selector('input[type="password"]', state="attached", timeout=10_000)
+                try:
+                    pwd_el = page.wait_for_selector(
+                        'input[type="password"]', state="attached", timeout=10_000
+                    )
+                    # Unhide if necessary
+                    page.evaluate("""() => {
+                        const el = document.querySelector('input[type="password"]');
+                        if (el) { el.removeAttribute('hidden');
+                                  el.style.display=''; el.style.visibility=''; }
+                    }""")
+                except Exception:
+                    pass
 
-            # React-compatible fill: use native HTMLInputElement value setter so
-            # framework change-detection fires correctly
-            page.evaluate("""(pwd) => {
-                const el = document.querySelector('input[type="password"]');
-                if (!el) return;
-                el.removeAttribute('hidden');
-                el.style.display = ''; el.style.visibility = '';
-                const setter = Object.getOwnPropertyDescriptor(
-                    window.HTMLInputElement.prototype, 'value').set;
-                setter.call(el, pwd);
-                el.dispatchEvent(new Event('input',  {bubbles:true}));
-                el.dispatchEvent(new Event('change', {bubbles:true}));
-            }""", password)
-            page.wait_for_timeout(500)
+            if pwd_el:
+                # click + type fires real keyboard events which React/Angular need
+                pwd_el.click()
+                pwd_el.fill("")          # clear first
+                pwd_el.type(password, delay=40)
+            else:
+                raise RuntimeError("Password field not found after username step.")
+
+            page.wait_for_timeout(600)
 
             _submitted2 = False
             for _sel in [
@@ -318,19 +329,16 @@ class ConversocialScraper:
             if not _submitted2:
                 page.keyboard.press("Enter")
 
-            # Wait for SSO chain to settle — use networkidle, NOT a URL pattern,
-            # because Verint SSO may redirect through intermediate domains.
+            # Wait for the URL to leave the login page — this is the reliable signal
+            # that authentication succeeded (works regardless of SSO domain chain).
             try:
-                page.wait_for_load_state("networkidle", timeout=45_000)
+                page.wait_for_url(
+                    lambda url: "/login" not in url and "signin" not in url,
+                    timeout=60_000,
+                )
             except Exception:
-                pass
-            page.wait_for_timeout(2_000)
-
-            # Verify we are no longer on a login/auth page
-            final_url = page.url
-            login_keywords = ["/login", "signin", "logon", "/auth/", "sso."]
-            if any(kw in final_url.lower() for kw in login_keywords):
-                # Collect any on-page error text to help diagnose
+                # If URL never changed, collect diagnostic info
+                final_url = page.url
                 try:
                     err_el = page.locator('[class*="error"], [class*="alert"], [role="alert"]').first
                     err_text = err_el.inner_text(timeout=2_000) if err_el.count() > 0 else ""
@@ -340,10 +348,10 @@ class ConversocialScraper:
                     page.screenshot(path=".streamlit/debug_login_fail.png")
                 except Exception:
                     pass
-                hint = f"Page says: {err_text[:200]}" if err_text else "Check credentials in sidebar."
+                hint = f"Page says: {err_text[:200]}" if err_text else "Check credentials in the sidebar."
                 raise RuntimeError(
-                    f"Login failed — still on login page after submission.\n"
-                    f"URL: {final_url}\n{hint}"
+                    f"Login failed — still on login page 60 s after submitting.\n"
+                    f"Stuck URL: {final_url}\n{hint}"
                 )
 
         except RuntimeError:
