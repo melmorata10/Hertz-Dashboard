@@ -232,7 +232,7 @@ class ConversocialScraper:
     # ── internal helpers ───────────────────────────────────────────────────────
 
     def _login(self, page: "Page", on_status: Callable | None = None) -> None:
-        """Auto-login using credentials (from sidebar or secrets.toml), or manual fallback."""
+        """Auto-login using credentials (from sidebar or secrets.toml)."""
         username = getattr(self, "_username", None)
         password = getattr(self, "_password", None)
         if not username or not password:
@@ -241,96 +241,119 @@ class ConversocialScraper:
             except Exception:
                 username, password = None, None
 
-        if username and password:
-            if on_status:
-                on_status("🔐 Logging in to Conversocial automatically…")
+        if not username or not password:
+            page.wait_for_load_state("networkidle", timeout=30_000)
+            return
+
+        if on_status:
+            on_status("🔐 Logging in to Conversocial…")
+        try:
+            # Step 1 — username
+            page.wait_for_selector(
+                'input[name="username"], input[type="text"], input[type="email"]',
+                timeout=15_000,
+            )
+            # click + keyboard.type is more reliable than fill() across SSO frameworks
+            page.click('input[name="username"], input[type="text"], input[type="email"]')
+            page.keyboard.type(username, delay=40)
+            page.wait_for_timeout(500)
+
+            _submitted = False
+            for _sel in [
+                'button[type="submit"]', 'input[type="submit"]',
+                'button:has-text("Next")', 'button:has-text("Continue")',
+                'button:has-text("Sign in")', 'button:has-text("Log in")', 'button:has-text("Login")',
+            ]:
+                try:
+                    _btn = page.locator(_sel)
+                    if _btn.count() > 0 and _btn.first.is_visible(timeout=1_000):
+                        _btn.first.click()
+                        _submitted = True
+                        break
+                except Exception:
+                    continue
+            if not _submitted:
+                page.keyboard.press("Enter")
             try:
-                # Step 1: fill username and click/submit
-                page.wait_for_selector(
-                    'input[name="username"], input[type="text"], input[type="email"]',
-                    timeout=15_000,
-                )
-                page.fill(
-                    'input[name="username"], input[type="text"], input[type="email"]',
-                    username,
-                )
-                page.wait_for_timeout(600)
-                # Try submit button first, fall back to Enter
-                _submitted = False
-                for _sel in [
-                    'button[type="submit"]', 'input[type="submit"]',
-                    'button:has-text("Next")', 'button:has-text("Continue")',
-                    'button:has-text("Sign in")', 'button:has-text("Log in")',
-                    'button:has-text("Login")',
-                ]:
-                    try:
-                        _btn = page.locator(_sel)
-                        if _btn.count() > 0 and _btn.first.is_visible(timeout=1_000):
-                            _btn.first.click()
-                            _submitted = True
-                            break
-                    except Exception:
-                        continue
-                if not _submitted:
-                    page.keyboard.press("Enter")
-                page.wait_for_timeout(2_500)
+                page.wait_for_load_state("networkidle", timeout=20_000)
+            except Exception:
+                pass
+            page.wait_for_timeout(1_000)
 
-                # Step 2: fill password — field may be hidden, use JS to bypass visibility
-                page.wait_for_selector(
-                    'input[type="password"], input[name="password"]',
-                    state="attached", timeout=15_000,
-                )
-                page.evaluate(
-                    """(pwd) => {
-                        const el = document.querySelector('input[type="password"], input[name="password"]');
-                        if (el) {
-                            el.removeAttribute('hidden');
-                            el.style.display = '';
-                            el.style.visibility = '';
-                            el.value = pwd;
-                            el.dispatchEvent(new Event('input',  {bubbles:true}));
-                            el.dispatchEvent(new Event('change', {bubbles:true}));
-                        }
-                    }""",
-                    password,
-                )
-                page.wait_for_timeout(600)
-                _submitted2 = False
-                for _sel in [
-                    'button[type="submit"]', 'input[type="submit"]',
-                    'button:has-text("Sign in")', 'button:has-text("Log in")',
-                    'button:has-text("Login")', 'button:has-text("Continue")',
-                ]:
-                    try:
-                        _btn = page.locator(_sel)
-                        if _btn.count() > 0 and _btn.first.is_visible(timeout=1_000):
-                            _btn.first.click()
-                            _submitted2 = True
-                            break
-                    except Exception:
-                        continue
-                if not _submitted2:
-                    page.keyboard.press("Enter")
-                page.wait_for_timeout(3_000)
+            # Step 2 — password (field may be hidden on SSO pages)
+            try:
+                page.wait_for_selector('input[type="password"]', state="visible", timeout=8_000)
+            except Exception:
+                page.wait_for_selector('input[type="password"]', state="attached", timeout=10_000)
 
-                # Wait for redirect away from login (handles SSO multi-step redirects)
-                page.wait_for_function(
-                    "() => window.location.href.includes('conversocial.com') && "
-                    "!window.location.href.includes('/login') && "
-                    "!window.location.href.includes('signin')",
-                    timeout=90_000,
-                )
-                page.wait_for_load_state("networkidle", timeout=30_000)
-                return
-            except Exception as e:
-                err_msg = str(e)
-                Path(".streamlit/debug_login_err.txt").write_text(err_msg, encoding="utf-8")
+            # React-compatible fill: use native HTMLInputElement value setter so
+            # framework change-detection fires correctly
+            page.evaluate("""(pwd) => {
+                const el = document.querySelector('input[type="password"]');
+                if (!el) return;
+                el.removeAttribute('hidden');
+                el.style.display = ''; el.style.visibility = '';
+                const setter = Object.getOwnPropertyDescriptor(
+                    window.HTMLInputElement.prototype, 'value').set;
+                setter.call(el, pwd);
+                el.dispatchEvent(new Event('input',  {bubbles:true}));
+                el.dispatchEvent(new Event('change', {bubbles:true}));
+            }""", password)
+            page.wait_for_timeout(500)
+
+            _submitted2 = False
+            for _sel in [
+                'button[type="submit"]', 'input[type="submit"]',
+                'button:has-text("Sign in")', 'button:has-text("Log in")',
+                'button:has-text("Login")', 'button:has-text("Continue")',
+            ]:
+                try:
+                    _btn = page.locator(_sel)
+                    if _btn.count() > 0 and _btn.first.is_visible(timeout=1_000):
+                        _btn.first.click()
+                        _submitted2 = True
+                        break
+                except Exception:
+                    continue
+            if not _submitted2:
+                page.keyboard.press("Enter")
+
+            # Wait for SSO chain to settle — use networkidle, NOT a URL pattern,
+            # because Verint SSO may redirect through intermediate domains.
+            try:
+                page.wait_for_load_state("networkidle", timeout=45_000)
+            except Exception:
+                pass
+            page.wait_for_timeout(2_000)
+
+            # Verify we are no longer on a login/auth page
+            final_url = page.url
+            login_keywords = ["/login", "signin", "logon", "/auth/", "sso."]
+            if any(kw in final_url.lower() for kw in login_keywords):
+                # Collect any on-page error text to help diagnose
+                try:
+                    err_el = page.locator('[class*="error"], [class*="alert"], [role="alert"]').first
+                    err_text = err_el.inner_text(timeout=2_000) if err_el.count() > 0 else ""
+                except Exception:
+                    err_text = ""
                 try:
                     page.screenshot(path=".streamlit/debug_login_fail.png")
                 except Exception:
                     pass
-                raise RuntimeError(f"Auto-login failed: {err_msg[:300]}")
-        page.wait_for_load_state("networkidle", timeout=30_000)
+                hint = f"Page says: {err_text[:200]}" if err_text else "Check credentials in sidebar."
+                raise RuntimeError(
+                    f"Login failed — still on login page after submission.\n"
+                    f"URL: {final_url}\n{hint}"
+                )
+
+        except RuntimeError:
+            raise
+        except Exception as e:
+            try:
+                page.screenshot(path=".streamlit/debug_login_fail.png")
+            except Exception:
+                pass
+            raise RuntimeError(f"Auto-login failed: {str(e)[:400]}")
 
     def _open_analytics(self, page: "Page", on_status: Callable | None = None) -> "Frame":
         page.goto(f"{BASE_URL}/analytics/")
