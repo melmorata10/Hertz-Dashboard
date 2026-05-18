@@ -223,6 +223,11 @@ section[data-testid="stSidebar"] {
     letter-spacing: 0.2px;
 }
 
+/* ── Hide Verint Social Media nav link ───────────────────────────────── */
+[data-testid="stSidebarNav"] a[href*="Verint"],
+[data-testid="stSidebarNav"] a[href*="verint"],
+[data-testid="stSidebarNav"] a[href*="2_Verint"] { display: none !important; }
+
 /* ── Always-visible fullscreen toolbar on tables ─────────────────────── */
 [data-testid="stElementToolbar"] {
     opacity: 1 !important;
