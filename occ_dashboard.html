@@ -38,8 +38,15 @@ body {
 }
 #header-right {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 14px;
+  justify-content: flex-end;
+  gap: 10px;
+}
+#share-panel, #share-saving {
+  flex-basis: 100%;
+  display: none;
+  justify-content: flex-end;
 }
 #week-badge {
   background: rgba(255,255,255,0.12);
@@ -83,14 +90,13 @@ body {
 }
 #add-files-btn:hover { background: rgba(126,207,238,0.1); border-color: #7ecfee; }
 #share-panel {
-  display: none;
-  margin-top: 8px;
   background: rgba(255,255,255,0.12);
   border: 1px solid rgba(255,255,255,0.25);
   border-radius: 8px;
   padding: 7px 10px;
   align-items: center;
   gap: 8px;
+  max-width: 420px;
 }
 #share-url {
   font-size: 11px;
@@ -118,7 +124,7 @@ body {
   flex-shrink: 0;
 }
 #copy-btn:hover { background: #0097a7; }
-#share-saving { color: #7ecfee; font-size: 11px; margin-top: 6px; display: none; }
+#share-saving { color: #7ecfee; font-size: 11px; }
 
 /* ── Main content ───────────────────────────────────────────────────── */
 #main { padding: 20px 28px; }
