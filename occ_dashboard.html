@@ -405,6 +405,7 @@ tr.lob-row td:first-child { padding-left: 22px; color: #1a3a50; }
   white-space: nowrap;
   transition: all 0.2s;
 }
+#sp-btn { display: none; }
 #sp-btn:hover { background: rgba(126,207,238,0.1); border-color: #7ecfee; }
 
 /* ── SharePoint config modal ────────────────────────────────────────── */
@@ -809,6 +810,7 @@ function loadFiles(files) {
       document.getElementById('drop-zone').style.display = 'none';
       document.getElementById('dashboard').style.display = 'block';
       document.getElementById('add-files-btn').style.display = 'inline-block';
+      document.getElementById('sp-btn').style.display = 'inline-block';
       document.getElementById('upload-status').textContent =
         `✓ ${files.length} file${files.length > 1 ? 's' : ''} loaded`;
 
@@ -1025,6 +1027,7 @@ function rebuildSlicerOptsFromCache() {
     applySlicers();
     document.getElementById('dashboard').style.display = 'block';
     document.getElementById('add-files-btn').style.display = 'inline-block';
+    document.getElementById('sp-btn').style.display = 'inline-block';
     document.getElementById('upload-btn-wrap').style.display = 'none';
     statusEl.textContent = '✓ Loaded from shared link';
     // Show the share panel with current URL so it can be re-shared
