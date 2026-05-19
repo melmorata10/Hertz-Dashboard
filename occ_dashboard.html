@@ -774,7 +774,10 @@ function cell(val, cls='') {
 
 // ── File input & drag-drop ────────────────────────────────────────────────────
 document.getElementById('file-input').addEventListener('change', e => {
-  if (e.target.files.length) loadFiles(Array.from(e.target.files));
+  if (!e.target.files.length) return;
+  if (cfFcastCache) addFiles(Array.from(e.target.files));
+  else loadFiles(Array.from(e.target.files));
+  e.target.value = ''; // reset so same files can be re-selected
 });
 document.getElementById('add-file-input').addEventListener('change', e => {
   if (e.target.files.length) addFiles(Array.from(e.target.files));
