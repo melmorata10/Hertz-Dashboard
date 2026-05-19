@@ -356,6 +356,36 @@ tr.lob-row td:first-child { padding-left: 22px; color: #1a3a50; }
 .kpi-sub   { font-size: 10px; color: #7a96a8; }
 .sev-critical { background:#fde8e8 !important; color:#8b1a1a !important; font-weight:700; border-radius:4px; padding:2px 7px; }
 .sev-warning  { background:#fff3cd !important; color:#7d5a00 !important; font-weight:700; border-radius:4px; padding:2px 7px; }
+
+/* ── Weekly Trend tab ───────────────────────────────────────────────── */
+.wt-section { margin-bottom: 28px; }
+.wt-metric-label {
+  font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.8px;
+  color: #0097a7; padding: 8px 14px 6px; background: #f0f8fc;
+  border-left: 4px solid #00bcd4; border-bottom: 1px solid #cddce8;
+}
+.wt-metric-label.red   { color: #c0392b; border-left-color: #e74c3c; background: #fff5f5; }
+.wt-metric-label.green { color: #1a6b3a; border-left-color: #27ae60; background: #f0fff5; }
+.wt-metric-label.blue  { color: #1a3a6b; border-left-color: #2980b9; background: #f0f5ff; }
+.wt-metric-label.purple{ color: #6b1a6b; border-left-color: #8e44ad; background: #fdf5ff; }
+.wt-metric-label.gold  { color: #7d5a00; border-left-color: #f39c12; background: #fffdf0; }
+#weekly-trend-body table { width: 100%; border-collapse: collapse; font-size: 12px; }
+#weekly-trend-body th {
+  background: #e8f4f8; color: #0a3a55; font-size: 11px; font-weight: 700;
+  padding: 7px 10px; text-align: center; border: 1px solid #cddce8; white-space: nowrap;
+}
+#weekly-trend-body th:first-child { text-align: left; min-width: 200px; }
+#weekly-trend-body td {
+  padding: 5px 10px; border: 1px solid #e0eaf0; text-align: center;
+  white-space: nowrap;
+}
+#weekly-trend-body td:first-child { text-align: left; }
+#weekly-trend-body tr.wt-channel td {
+  background: #daeaf3; font-weight: 700; color: #0a3a55; font-size: 12px;
+}
+#weekly-trend-body tr.wt-lob td { background: #fff; color: #1a2a38; }
+#weekly-trend-body tr.wt-lob:nth-child(even) td { background: #f7fbfd; }
+#weekly-trend-body td:first-child.wt-lob-name { padding-left: 22px; color: #2a4a5e; }
 </style>
 </head>
 <body>
@@ -442,6 +472,7 @@ tr.lob-row td:first-child { padding-left: 22px; color: #1a3a50; }
       <button class="tab-btn active" onclick="switchTab('ent')">📋 ENT Perf Summary</button>
       <button class="tab-btn" onclick="switchTab('vendor')">🏢 Per Vendor</button>
       <button class="tab-btn" onclick="switchTab('exec')">📊 Executive Summary</button>
+      <button class="tab-btn" onclick="switchTab('weekly')">📅 Weekly Trend</button>
       <button class="tab-btn" onclick="switchTab('interval')">⏱ Interval Summary</button>
     </div>
 
@@ -542,6 +573,11 @@ tr.lob-row td:first-child { padding-left: 22px; color: #1a3a50; }
           <tbody id="vendor-body"></tbody>
         </table>
       </div>
+    </div>
+
+    <!-- Tab: Weekly Trend -->
+    <div id="tab-weekly" class="tab-panel">
+      <div id="weekly-trend-body"></div>
     </div>
 
     <!-- Tab: Executive Summary -->
@@ -1402,6 +1438,7 @@ function applySlicers() {
   rebuildEntRows(wk, activeDt, ch, vd, br, lb);
   rebuildIntervalRows(wk, activeDt, ch, vd, br, lb);
   rebuildVendorRows(wk, activeDt, ch, vd, br, lb);
+  renderWeeklyTrend(ch, vd, br, lb);
   const anyActive = ch || vd || br || lb;
 
   const tbody = document.getElementById('ent-body');
@@ -1864,6 +1901,278 @@ function renderExecSummary() {
   } else {
     wowWrap.style.display  = 'none';
     wowTitle.style.display = 'none';
+  }
+}
+
+// ── Weekly Trend Tab ──────────────────────────────────────────────────────────
+function renderWeeklyTrend(filterCh, filterVd, filterBr, filterLb) {
+  const container = document.getElementById('weekly-trend-body');
+  container.innerHTML = '';
+  if (!cfFcastCache) return;
+
+  // ── All weeks sorted chronologically ──────────────────────────────────────
+  const weekSerials = [...slicerOpts.weeks.keys()].sort((a, b) => a - b);
+  if (!weekSerials.length) return;
+
+  // Short week labels: "Wk MM/DD"
+  const wkLabels = weekSerials.map(s => {
+    const lbl = weekLabel(s); // "Week of MM/DD"
+    return lbl.replace('Week of ', 'Wk ');
+  });
+
+  // ── Collect all (channel, lob) pairs in display order ────────────────────
+  // Use entRows which already has the right channel→LOB grouping
+  const channelOrder = [];
+  const channelLobs  = {}; // channel → [lob, ...]
+  for (const r of entRows) {
+    if (r.isChannel) {
+      if (!channelLobs[r.lob]) { channelOrder.push(r.lob); channelLobs[r.lob] = []; }
+    } else {
+      const ch = r.channel || '(Unknown)';
+      if (!channelLobs[ch]) { channelOrder.push(ch); channelLobs[ch] = []; }
+      channelLobs[ch].push(r.lob);
+    }
+  }
+
+  // ── Aggregate raw data per (week, lob) ───────────────────────────────────
+  const { rows, cLob, cCh, cDate2, cRcv, cHndl, cSTA, cBase,
+          cFcV, cFcAH, cHT, cSch, cPres, cVendor, cBrand } = cfFcastCache;
+
+  // agg[wkMon][lob] = { rcv, hndl, sta, base, fc_v, ht_n, ht_d, sch_sum, sch_nz, pres_sum }
+  const agg = {};
+  for (const s of weekSerials) agg[s] = {};
+
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r) continue;
+    const serial = r[cDate2] != null ? Math.floor(r[cDate2]) : null;
+    if (!serial || serial < 1) continue;
+    const wkMon = weekMondaySerial(serial);
+    if (!agg[wkMon]) continue; // not a week we care about
+
+    const lob  = r[cLob]    != null ? String(r[cLob]).trim()    : '';
+    const ch   = r[cCh]     != null ? String(r[cCh]).trim()     : '';
+    const vd   = cVendor >= 0 && r[cVendor] != null ? String(r[cVendor]).trim() : '';
+    const br   = cBrand  >= 0 && r[cBrand]  != null ? String(r[cBrand]).trim()  : '';
+    if (!lob) continue;
+    if (filterCh && ch !== filterCh) continue;
+    if (filterVd && vd !== filterVd) continue;
+    if (filterBr && br !== filterBr) continue;
+    if (filterLb && lob !== filterLb) continue;
+
+    if (!agg[wkMon][lob]) agg[wkMon][lob] = {
+      ch, rcv:0, hndl:0, sta:0, base:0, fc_v:0, ht_n:0, ht_d:0, sch_sum:0, sch_nz:0, pres_sum:0
+    };
+    const d = agg[wkMon][lob];
+    const rcv  = r[cRcv]  || 0, hndl = r[cHndl] || 0;
+    const fc_v = r[cFcV]  || 0, ht   = r[cHT]   || 0;
+    const sch  = r[cSch]  || 0, pres = r[cPres]  || 0;
+    d.rcv  += rcv;  d.hndl += hndl;
+    d.sta  += r[cSTA]  || 0; d.base += r[cBase] || 0;
+    d.fc_v += fc_v;
+    if (hndl > 0 && ht > 0) { d.ht_n += ht; d.ht_d += hndl; }
+    d.sch_sum += sch; d.pres_sum += pres;
+    if (sch > 0) d.sch_nz++;
+  }
+
+  // Adh per (wk, lob) from cfSchedCache
+  const adhAgg = {}; // wkMon → { lob → { s, m } }
+  if (cfSchedCache) {
+    const { rows: sRows, cLob: scLob, cAdhS, cAdhM, cDate } = cfSchedCache;
+    for (let i = 1; i < sRows.length; i++) {
+      const r = sRows[i]; if (!r) continue;
+      const serial = r[cDate] != null ? Math.floor(r[cDate]) : null;
+      if (!serial || serial < 1) continue;
+      const wkMon = weekMondaySerial(serial);
+      if (!agg[wkMon]) continue;
+      const lob = r[scLob] != null ? String(r[scLob]).trim() : '';
+      if (!lob) continue;
+      if (!adhAgg[wkMon]) adhAgg[wkMon] = {};
+      if (!adhAgg[wkMon][lob]) adhAgg[wkMon][lob] = { s: 0, m: 0 };
+      adhAgg[wkMon][lob].s += r[cAdhS] || 0;
+      adhAgg[wkMon][lob].m += r[cAdhM] || 0;
+    }
+  }
+
+  // ── Metric definitions ────────────────────────────────────────────────────
+  const metrics = [
+    {
+      key:'sl',    label:'Service Level %', color:'',
+      val: (d) => d.base > 0 ? Math.min(d.sta/d.base*100,100) : null,
+      fmt: v => v.toFixed(1)+'%', cls: v => colorSL(v)
+    },
+    {
+      key:'rcv',   label:'Received Vol', color:'red',
+      val: (d) => d.rcv > 0 ? d.rcv : null,
+      fmt: v => Math.round(v).toLocaleString(), cls: ()=>''
+    },
+    {
+      key:'hndl',  label:'Handled IB', color:'',
+      val: (d) => d.hndl > 0 ? d.hndl : null,
+      fmt: v => Math.round(v).toLocaleString(), cls: ()=>''
+    },
+    {
+      key:'fcv',   label:'FCV %', color:'blue',
+      val: (d) => d.fc_v > 0 ? d.rcv/d.fc_v*100 : null,
+      fmt: v => v.toFixed(1)+'%', cls: v => colorFCV(v)
+    },
+    {
+      key:'aht',   label:'AHT w/ ACW', color:'purple',
+      val: (d) => d.ht_d > 0 ? d.ht_n/d.ht_d/86400 : null,
+      fmt: v => fSecs(v), cls: ()=>''
+    },
+    {
+      key:'abs',   label:'Abs %', color:'gold',
+      val: (d) => d.sch_sum > 0 ? (d.sch_sum-d.pres_sum)/d.sch_sum*100 : null,
+      fmt: v => v.toFixed(1)+'%', cls: v => colorAbs(v)
+    },
+    {
+      key:'adh',   label:'Sched Adherence %', color:'green',
+      val: (d, wk, lob) => { const a = (adhAgg[wk]||{})[lob]; return a&&a.s>0 ? a.m/a.s*100 : null; },
+      fmt: v => v.toFixed(1)+'%', cls: v => colorAdh(v)
+    },
+    {
+      key:'hc',    label:'Base HC Req', color:'blue',
+      val: (d) => {
+        const aht = d.ht_d > 0 ? d.ht_n/d.ht_d/86400 : null;
+        if (aht == null || d.fc_v <= 0 || d.sch_nz <= 0) return null;
+        return hcReq(d.fc_v / d.sch_nz, aht, chanConc(d.ch));
+      },
+      fmt: v => String(v), cls: ()=>''
+    },
+    {
+      key:'ou',    label:'Overs / Unders', color:'',
+      val: (d) => {
+        const sched = d.sch_nz > 0 ? Math.round(d.sch_sum / d.sch_nz) : null;
+        const aht   = d.ht_d   > 0 ? d.ht_n / d.ht_d / 86400 : null;
+        const hc    = (aht != null && d.fc_v > 0 && d.sch_nz > 0)
+                      ? hcReq(d.fc_v / d.sch_nz, aht, chanConc(d.ch)) : null;
+        return (sched != null && hc != null) ? sched - hc : null;
+      },
+      fmt: v => (v > 0 ? '+' : '') + v,
+      cls: v => v >= 0 ? 'green' : 'red'
+    }
+  ];
+
+  // ── Render one section per metric ─────────────────────────────────────────
+  for (const metric of metrics) {
+    const section = document.createElement('div');
+    section.className = 'wt-section';
+
+    // Metric label header
+    const labelDiv = document.createElement('div');
+    labelDiv.className = `wt-metric-label ${metric.color}`;
+    labelDiv.textContent = metric.label;
+    section.appendChild(labelDiv);
+
+    // Table
+    const table = document.createElement('table');
+
+    // Header row
+    const thead = table.createTHead();
+    const hrow  = thead.insertRow();
+    const thLob = document.createElement('th');
+    thLob.textContent = 'Line of Business';
+    hrow.appendChild(thLob);
+    for (const lbl of wkLabels) {
+      const th = document.createElement('th'); th.textContent = lbl; hrow.appendChild(th);
+    }
+
+    // Body
+    const tbody = table.createTBody();
+    for (const ch of channelOrder) {
+      const lobs = channelLobs[ch] || [];
+
+      // Channel row — aggregate across all LOBs in that channel
+      const chRow = tbody.insertRow();
+      chRow.className = 'wt-channel';
+      const chTd = chRow.insertCell(); chTd.textContent = ch;
+      for (const wkMon of weekSerials) {
+        const td = chRow.insertCell();
+        // Sum across LOBs in this channel for aggregate metrics
+        let num=0, den=0, hasVal=false;
+        const lobsInCh = Object.entries(agg[wkMon]).filter(([l]) => {
+          const meta = lobMeta[l]; return meta && meta.channel === ch;
+        });
+        if (metric.key === 'sl') {
+          let s=0,b=0; for(const[,d]of lobsInCh){s+=d.sta;b+=d.base;}
+          const v = b>0 ? Math.min(s/b*100,100) : null;
+          td.textContent = v!=null ? v.toFixed(1)+'%' : '—';
+          if (v!=null) td.className = colorSL(v);
+        } else if (metric.key==='rcv') {
+          let s=0; for(const[,d]of lobsInCh)s+=d.rcv;
+          td.textContent = s>0 ? Math.round(s).toLocaleString() : '—';
+        } else if (metric.key==='hndl') {
+          let s=0; for(const[,d]of lobsInCh)s+=d.hndl;
+          td.textContent = s>0 ? Math.round(s).toLocaleString() : '—';
+        } else if (metric.key==='fcv') {
+          let r=0,f=0; for(const[,d]of lobsInCh){r+=d.rcv;f+=d.fc_v;}
+          const v=f>0?r/f*100:null; td.textContent=v!=null?v.toFixed(1)+'%':'—';
+          if(v!=null) td.className=colorFCV(v);
+        } else if (metric.key==='aht') {
+          let n=0,d2=0; for(const[,d]of lobsInCh){n+=d.ht_n;d2+=d.ht_d;}
+          const v=d2>0?n/d2/86400:null; td.textContent=v!=null?fSecs(v):'—';
+        } else if (metric.key==='abs') {
+          let s=0,p=0; for(const[,d]of lobsInCh){s+=d.sch_sum;p+=d.pres_sum;}
+          const v=s>0?(s-p)/s*100:null; td.textContent=v!=null?v.toFixed(1)+'%':'—';
+          if(v!=null) td.className=colorAbs(v);
+        } else if (metric.key==='adh') {
+          let s=0,m=0; for(const[l]of lobsInCh){const a=(adhAgg[wkMon]||{})[l];if(a){s+=a.s;m+=a.m;}}
+          const v=s>0?m/s*100:null; td.textContent=v!=null?v.toFixed(1)+'%':'—';
+          if(v!=null) td.className=colorAdh(v);
+        } else if (metric.key==='hc') {
+          let hcSum=0,hcCnt=0;
+          for(const[l,d]of lobsInCh){
+            const aht=d.ht_d>0?d.ht_n/d.ht_d/86400:null;
+            const hc2=aht&&d.fc_v>0&&d.sch_nz>0?hcReq(d.fc_v/d.sch_nz,aht,chanConc(d.ch)):null;
+            if(hc2!=null){hcSum+=hc2;hcCnt++;}
+          }
+          td.textContent=hcCnt>0?hcSum:'—';
+        } else if (metric.key==='ou') {
+          let schSum=0,schNz=0,hcSum=0,hcCnt=0;
+          for(const[l,d]of lobsInCh){
+            schSum+=d.sch_sum;schNz+=d.sch_nz;
+            const aht=d.ht_d>0?d.ht_n/d.ht_d/86400:null;
+            const hc2=aht&&d.fc_v>0&&d.sch_nz>0?hcReq(d.fc_v/d.sch_nz,aht,chanConc(d.ch)):null;
+            if(hc2!=null){hcSum+=hc2;hcCnt++;}
+          }
+          const sch=schNz>0?Math.round(schSum/schNz):null;
+          const hc2=hcCnt>0?hcSum:null;
+          const ou2=(sch!=null&&hc2!=null)?sch-hc2:null;
+          td.textContent=ou2!=null?(ou2>0?'+':'')+ou2:'—';
+          if(ou2!=null) td.className=ou2>=0?'green':'red';
+        } else { td.textContent='—'; }
+      }
+
+      // LOB rows
+      for (const lob of lobs) {
+        const row = tbody.insertRow();
+        row.className = 'wt-lob';
+        const lobTd = row.insertCell();
+        lobTd.textContent = '  ' + lob;
+        lobTd.className   = 'wt-lob-name';
+        lobTd.style.paddingLeft = '22px';
+
+        for (let wi = 0; wi < weekSerials.length; wi++) {
+          const wkMon = weekSerials[wi];
+          const d  = agg[wkMon][lob];
+          const td = row.insertCell();
+          if (!d) { td.textContent = '—'; continue; }
+          const v = metric.val(d, wkMon, lob);
+          if (v == null) { td.textContent = '—'; continue; }
+          td.textContent = metric.fmt(v);
+          const cls = metric.cls(v);
+          if (cls) td.className = cls;
+          if (metric.key === 'ou') {
+            td.style.color      = v >= 0 ? '#155724' : '#8b1a1a';
+            td.style.fontWeight = '600';
+          }
+        }
+      }
+    }
+
+    section.appendChild(table);
+    container.appendChild(section);
   }
 }
 
