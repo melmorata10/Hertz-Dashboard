@@ -390,12 +390,6 @@ tr.lob-row td:first-child { padding-left: 22px; color: #1a3a50; }
   background: #daeaf3; font-weight: 700; color: #0a3a55; font-size: 13px;
   padding: 8px 12px;
 }
-#weekly-trend-body tr.wt-week-repeat td {
-  background: #f0f6fa; color: #4a7a9b; font-size: 10px; font-weight: 700;
-  padding: 4px 14px; text-align: center; border-top: 1px solid #cddce8;
-  text-transform: uppercase; letter-spacing: 0.04em;
-}
-#weekly-trend-body tr.wt-week-repeat td:first-child { text-align: left; }
 #weekly-trend-body tr.wt-lob td { background: #fff; color: #1a2a38; }
 #weekly-trend-body tr.wt-lob:nth-child(even) td { background: #f7fbfd; }
 
@@ -2111,18 +2105,6 @@ function renderWeeklyTrend(filterCh, filterVd, filterBr, filterLb) {
 
   const tbody = table.createTBody();
 
-  // Helper: repeat the week-label header row under each LOB / channel block
-  function appendWeekRepeatRow() {
-    const row = tbody.insertRow();
-    row.className = 'wt-week-repeat';
-    const nameTd = row.insertCell();
-    nameTd.textContent = 'LOB / Metric';
-    for (const lbl of wkLabels) {
-      const td = row.insertCell();
-      td.textContent = lbl;
-    }
-  }
-
   // Helper: render metric rows for a given entity
   function appendMetricRows(lobKey, chKey, isIndented) {
     for (const m of metrics) {
@@ -2164,15 +2146,20 @@ function renderWeeklyTrend(filterCh, filterVd, filterBr, filterLb) {
   for (const ch of channelOrder) {
     const lobs = channelLobs[ch] || [];
 
-    // ── Channel header row ──────────────────────────────────────────────────
+    // ── Channel header row (name + week labels inline) ─────────────────────
     const chRow = tbody.insertRow();
     chRow.className = 'wt-channel';
     const chTd = chRow.insertCell();
     chTd.textContent = ch;
-    chTd.setAttribute('colspan', weekSerials.length + 1);
-
-    // Week-label repeat row under channel header
-    appendWeekRepeatRow();
+    for (const lbl of wkLabels) {
+      const td = chRow.insertCell();
+      td.textContent = lbl;
+      td.style.textAlign = 'center';
+      td.style.fontSize = '10px';
+      td.style.fontWeight = '700';
+      td.style.letterSpacing = '0.04em';
+      td.style.opacity = '0.85';
+    }
 
     // Channel aggregate metric rows (only when no individual LOB filter)
     if (!filterLb) {
@@ -2181,16 +2168,25 @@ function renderWeeklyTrend(filterCh, filterVd, filterBr, filterLb) {
 
     // ── Individual LOB blocks ───────────────────────────────────────────────
     for (const lob of lobs) {
-      // LOB sub-header
+      // LOB sub-header (name + week labels inline)
       const lobHdr = tbody.insertRow();
       lobHdr.className = 'wt-channel';
       lobHdr.style.background = '#e8f4f8';
       const lobHdrTd = lobHdr.insertCell();
-      lobHdrTd.textContent = '  ' + lob;
+      lobHdrTd.textContent = lob;
       lobHdrTd.style.paddingLeft = '18px';
       lobHdrTd.style.fontSize = '12px';
       lobHdrTd.style.color = '#0a3a55';
-      lobHdrTd.setAttribute('colspan', weekSerials.length + 1);
+      for (const lbl of wkLabels) {
+        const td = lobHdr.insertCell();
+        td.textContent = lbl;
+        td.style.textAlign = 'center';
+        td.style.fontSize = '10px';
+        td.style.fontWeight = '700';
+        td.style.color = '#4a7a9b';
+        td.style.letterSpacing = '0.04em';
+        td.style.opacity = '0.85';
+      }
 
       // LOB metric rows
       appendMetricRows(lob, ch, true);
