@@ -846,7 +846,8 @@ function loadFiles(files) {
 
   function readNext(idx) {
     if (idx >= files.length) {
-      // All files parsed — rebuild views
+      // All files parsed — re-derive slicer opts from full merged cache, then rebuild
+      rebuildSlicerOptsFromCache();
       rebuildEntRows('', '', '', '', '', '');
       rebuildIntervalRows('', '', '', '', '', '');
       rebuildVendorRows('', '', '', '', '', '');
