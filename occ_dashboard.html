@@ -381,11 +381,11 @@ tr.lob-row td:first-child { padding-left: 22px; color: #1a3a50; }
 }
 #weekly-trend-body td:first-child { text-align: left; }
 #weekly-trend-body tr.wt-channel td {
-  background: #daeaf3; font-weight: 700; color: #0a3a55; font-size: 12px;
+  background: #daeaf3; font-weight: 700; color: #0a3a55; font-size: 13px;
+  padding: 8px 12px;
 }
 #weekly-trend-body tr.wt-lob td { background: #fff; color: #1a2a38; }
 #weekly-trend-body tr.wt-lob:nth-child(even) td { background: #f7fbfd; }
-#weekly-trend-body td:first-child.wt-lob-name { padding-left: 22px; color: #2a4a5e; }
 </style>
 </head>
 <body>
@@ -1904,7 +1904,7 @@ function renderExecSummary() {
   }
 }
 
-// ── Weekly Trend Tab ──────────────────────────────────────────────────────────
+// ── Weekly Trend Tab — LOB blocks × metric rows × week columns ────────────────
 function renderWeeklyTrend(filterCh, filterVd, filterBr, filterLb) {
   const container = document.getElementById('weekly-trend-body');
   container.innerHTML = '';
@@ -1994,186 +1994,139 @@ function renderWeeklyTrend(filterCh, filterVd, filterBr, filterLb) {
     }
   }
 
-  // ── Metric definitions ────────────────────────────────────────────────────
+  // ── Metric rows definition ────────────────────────────────────────────────
   const metrics = [
-    {
-      key:'sl',    label:'Service Level %', color:'',
-      val: (d) => d.base > 0 ? Math.min(d.sta/d.base*100,100) : null,
-      fmt: v => v.toFixed(1)+'%', cls: v => colorSL(v)
-    },
-    {
-      key:'rcv',   label:'Received Vol', color:'red',
-      val: (d) => d.rcv > 0 ? d.rcv : null,
-      fmt: v => Math.round(v).toLocaleString(), cls: ()=>''
-    },
-    {
-      key:'hndl',  label:'Handled IB', color:'',
-      val: (d) => d.hndl > 0 ? d.hndl : null,
-      fmt: v => Math.round(v).toLocaleString(), cls: ()=>''
-    },
-    {
-      key:'fcv',   label:'FCV %', color:'blue',
-      val: (d) => d.fc_v > 0 ? d.rcv/d.fc_v*100 : null,
-      fmt: v => v.toFixed(1)+'%', cls: v => colorFCV(v)
-    },
-    {
-      key:'aht',   label:'AHT w/ ACW', color:'purple',
-      val: (d) => d.ht_d > 0 ? d.ht_n/d.ht_d/86400 : null,
-      fmt: v => fSecs(v), cls: ()=>''
-    },
-    {
-      key:'abs',   label:'Abs %', color:'gold',
-      val: (d) => d.sch_sum > 0 ? (d.sch_sum-d.pres_sum)/d.sch_sum*100 : null,
-      fmt: v => v.toFixed(1)+'%', cls: v => colorAbs(v)
-    },
-    {
-      key:'adh',   label:'Sched Adherence %', color:'green',
-      val: (d, wk, lob) => { const a = (adhAgg[wk]||{})[lob]; return a&&a.s>0 ? a.m/a.s*100 : null; },
-      fmt: v => v.toFixed(1)+'%', cls: v => colorAdh(v)
-    },
-    {
-      key:'hc',    label:'Base HC Req', color:'blue',
-      val: (d) => {
-        const aht = d.ht_d > 0 ? d.ht_n/d.ht_d/86400 : null;
-        if (aht == null || d.fc_v <= 0 || d.sch_nz <= 0) return null;
-        return hcReq(d.fc_v / d.sch_nz, aht, chanConc(d.ch));
-      },
-      fmt: v => String(v), cls: ()=>''
-    },
-    {
-      key:'ou',    label:'Overs / Unders', color:'',
-      val: (d) => {
-        const sched = d.sch_nz > 0 ? Math.round(d.sch_sum / d.sch_nz) : null;
-        const aht   = d.ht_d   > 0 ? d.ht_n / d.ht_d / 86400 : null;
-        const hc    = (aht != null && d.fc_v > 0 && d.sch_nz > 0)
-                      ? hcReq(d.fc_v / d.sch_nz, aht, chanConc(d.ch)) : null;
-        return (sched != null && hc != null) ? sched - hc : null;
-      },
-      fmt: v => (v > 0 ? '+' : '') + v,
-      cls: v => v >= 0 ? 'green' : 'red'
-    }
+    { label: 'SL %',
+      lobVal:  (d)       => d.base>0 ? Math.min(d.sta/d.base*100,100) : null,
+      chAgg:   (lobs)    => { let s=0,b=0; for(const d of lobs){s+=d.sta;b+=d.base;} return b>0?Math.min(s/b*100,100):null; },
+      fmt: v => v.toFixed(1)+'%', cls: v => colorSL(v) },
+    { label: 'Received Vol',
+      lobVal:  (d)       => d.rcv>0 ? d.rcv : null,
+      chAgg:   (lobs)    => { let s=0; for(const d of lobs)s+=d.rcv; return s>0?s:null; },
+      fmt: v => Math.round(v).toLocaleString(), cls: ()=>'' },
+    { label: 'Handled IB',
+      lobVal:  (d)       => d.hndl>0 ? d.hndl : null,
+      chAgg:   (lobs)    => { let s=0; for(const d of lobs)s+=d.hndl; return s>0?s:null; },
+      fmt: v => Math.round(v).toLocaleString(), cls: ()=>'' },
+    { label: 'FCV %',
+      lobVal:  (d)       => d.fc_v>0 ? d.rcv/d.fc_v*100 : null,
+      chAgg:   (lobs)    => { let r=0,f=0; for(const d of lobs){r+=d.rcv;f+=d.fc_v;} return f>0?r/f*100:null; },
+      fmt: v => v.toFixed(1)+'%', cls: v => colorFCV(v) },
+    { label: 'AHT w/ ACW',
+      lobVal:  (d)       => d.ht_d>0 ? d.ht_n/d.ht_d/86400 : null,
+      chAgg:   (lobs)    => { let n=0,dd=0; for(const d of lobs){n+=d.ht_n;dd+=d.ht_d;} return dd>0?n/dd/86400:null; },
+      fmt: v => fSecs(v), cls: ()=>'' },
+    { label: 'Attendance %',
+      lobVal:  (d)       => d.sch_sum>0 ? (1-(d.sch_sum-d.pres_sum)/d.sch_sum)*100 : null,
+      chAgg:   (lobs)    => { let s=0,p=0; for(const d of lobs){s+=d.sch_sum;p+=d.pres_sum;} return s>0?(1-(s-p)/s)*100:null; },
+      fmt: v => v.toFixed(1)+'%', cls: v => v>=95?'green':v>=90?'yellow':'red' },
+    { label: 'ADH %',
+      lobVal:  (d,wk,l)  => { const a=(adhAgg[wk]||{})[l]; return a&&a.s>0?a.m/a.s*100:null; },
+      chAgg:   (lobs,wk,ls) => { let s=0,m=0; for(const l of ls){const a=(adhAgg[wk]||{})[l];if(a){s+=a.s;m+=a.m;}} return s>0?m/s*100:null; },
+      fmt: v => v.toFixed(1)+'%', cls: v => colorAdh(v) },
+    { label: 'Base HC Req',
+      lobVal:  (d)       => { const aht=d.ht_d>0?d.ht_n/d.ht_d/86400:null; return (aht&&d.fc_v>0&&d.sch_nz>0)?hcReq(d.fc_v/d.sch_nz,aht,chanConc(d.ch)):null; },
+      chAgg:   (lobs)    => { let s=0,cnt=0; for(const d of lobs){const aht=d.ht_d>0?d.ht_n/d.ht_d/86400:null;const hc2=(aht&&d.fc_v>0&&d.sch_nz>0)?hcReq(d.fc_v/d.sch_nz,aht,chanConc(d.ch)):null;if(hc2!=null){s+=hc2;cnt++;}} return cnt>0?s:null; },
+      fmt: v => String(Math.round(v)), cls: ()=>'' },
+    { label: 'Overs / Unders',
+      lobVal:  (d)       => { const sc=d.sch_nz>0?Math.round(d.sch_sum/d.sch_nz):null; const aht=d.ht_d>0?d.ht_n/d.ht_d/86400:null; const hc2=(aht&&d.fc_v>0&&d.sch_nz>0)?hcReq(d.fc_v/d.sch_nz,aht,chanConc(d.ch)):null; return (sc!=null&&hc2!=null)?sc-hc2:null; },
+      chAgg:   (lobs)    => { let scS=0,scN=0,hcS=0,hcC=0; for(const d of lobs){scS+=d.sch_sum;scN+=d.sch_nz;const aht=d.ht_d>0?d.ht_n/d.ht_d/86400:null;const hc2=(aht&&d.fc_v>0&&d.sch_nz>0)?hcReq(d.fc_v/d.sch_nz,aht,chanConc(d.ch)):null;if(hc2!=null){hcS+=hc2;hcC++;}} const sc=scN>0?Math.round(scS/scN):null; return (sc!=null&&hcC>0)?sc-hcS:null; },
+      fmt: v => (v>0?'+':'')+Math.round(v),
+      cls: v => v>=0?'green':'red',
+      ouStyle: true }
   ];
 
-  // ── Render one section per metric ─────────────────────────────────────────
-  for (const metric of metrics) {
-    const section = document.createElement('div');
-    section.className = 'wt-section';
+  // ── Single table, all entities ─────────────────────────────────────────────
+  const table  = document.createElement('table');
+  const thead  = table.createTHead();
+  const hrow   = thead.insertRow();
+  const thName = document.createElement('th');
+  thName.textContent = 'LOB / Metric';
+  thName.style.cssText = 'text-align:left;min-width:220px;';
+  hrow.appendChild(thName);
+  for (const lbl of wkLabels) {
+    const th = document.createElement('th');
+    th.textContent = lbl;
+    hrow.appendChild(th);
+  }
 
-    // Metric label header
-    const labelDiv = document.createElement('div');
-    labelDiv.className = `wt-metric-label ${metric.color}`;
-    labelDiv.textContent = metric.label;
-    section.appendChild(labelDiv);
+  const tbody = table.createTBody();
 
-    // Table
-    const table = document.createElement('table');
+  // Helper: render metric rows for a given entity
+  function appendMetricRows(lobKey, chKey, isIndented) {
+    for (const m of metrics) {
+      const row = tbody.insertRow();
+      row.className = 'wt-lob';
 
-    // Header row
-    const thead = table.createTHead();
-    const hrow  = thead.insertRow();
-    const thLob = document.createElement('th');
-    thLob.textContent = 'Line of Business';
-    hrow.appendChild(thLob);
-    for (const lbl of wkLabels) {
-      const th = document.createElement('th'); th.textContent = lbl; hrow.appendChild(th);
-    }
+      const nameTd = row.insertCell();
+      nameTd.textContent = m.label;
+      nameTd.style.paddingLeft = isIndented ? '32px' : '18px';
+      nameTd.style.color = '#5a7a90';
+      nameTd.style.fontSize = '11px';
 
-    // Body
-    const tbody = table.createTBody();
-    for (const ch of channelOrder) {
-      const lobs = channelLobs[ch] || [];
-
-      // Channel row — aggregate across all LOBs in that channel
-      const chRow = tbody.insertRow();
-      chRow.className = 'wt-channel';
-      const chTd = chRow.insertCell(); chTd.textContent = ch;
       for (const wkMon of weekSerials) {
-        const td = chRow.insertCell();
-        // Sum across LOBs in this channel for aggregate metrics
-        let num=0, den=0, hasVal=false;
-        const lobsInCh = Object.entries(agg[wkMon]).filter(([l]) => {
-          const meta = lobMeta[l]; return meta && meta.channel === ch;
-        });
-        if (metric.key === 'sl') {
-          let s=0,b=0; for(const[,d]of lobsInCh){s+=d.sta;b+=d.base;}
-          const v = b>0 ? Math.min(s/b*100,100) : null;
-          td.textContent = v!=null ? v.toFixed(1)+'%' : '—';
-          if (v!=null) td.className = colorSL(v);
-        } else if (metric.key==='rcv') {
-          let s=0; for(const[,d]of lobsInCh)s+=d.rcv;
-          td.textContent = s>0 ? Math.round(s).toLocaleString() : '—';
-        } else if (metric.key==='hndl') {
-          let s=0; for(const[,d]of lobsInCh)s+=d.hndl;
-          td.textContent = s>0 ? Math.round(s).toLocaleString() : '—';
-        } else if (metric.key==='fcv') {
-          let r=0,f=0; for(const[,d]of lobsInCh){r+=d.rcv;f+=d.fc_v;}
-          const v=f>0?r/f*100:null; td.textContent=v!=null?v.toFixed(1)+'%':'—';
-          if(v!=null) td.className=colorFCV(v);
-        } else if (metric.key==='aht') {
-          let n=0,d2=0; for(const[,d]of lobsInCh){n+=d.ht_n;d2+=d.ht_d;}
-          const v=d2>0?n/d2/86400:null; td.textContent=v!=null?fSecs(v):'—';
-        } else if (metric.key==='abs') {
-          let s=0,p=0; for(const[,d]of lobsInCh){s+=d.sch_sum;p+=d.pres_sum;}
-          const v=s>0?(s-p)/s*100:null; td.textContent=v!=null?v.toFixed(1)+'%':'—';
-          if(v!=null) td.className=colorAbs(v);
-        } else if (metric.key==='adh') {
-          let s=0,m=0; for(const[l]of lobsInCh){const a=(adhAgg[wkMon]||{})[l];if(a){s+=a.s;m+=a.m;}}
-          const v=s>0?m/s*100:null; td.textContent=v!=null?v.toFixed(1)+'%':'—';
-          if(v!=null) td.className=colorAdh(v);
-        } else if (metric.key==='hc') {
-          let hcSum=0,hcCnt=0;
-          for(const[l,d]of lobsInCh){
-            const aht=d.ht_d>0?d.ht_n/d.ht_d/86400:null;
-            const hc2=aht&&d.fc_v>0&&d.sch_nz>0?hcReq(d.fc_v/d.sch_nz,aht,chanConc(d.ch)):null;
-            if(hc2!=null){hcSum+=hc2;hcCnt++;}
-          }
-          td.textContent=hcCnt>0?hcSum:'—';
-        } else if (metric.key==='ou') {
-          let schSum=0,schNz=0,hcSum=0,hcCnt=0;
-          for(const[l,d]of lobsInCh){
-            schSum+=d.sch_sum;schNz+=d.sch_nz;
-            const aht=d.ht_d>0?d.ht_n/d.ht_d/86400:null;
-            const hc2=aht&&d.fc_v>0&&d.sch_nz>0?hcReq(d.fc_v/d.sch_nz,aht,chanConc(d.ch)):null;
-            if(hc2!=null){hcSum+=hc2;hcCnt++;}
-          }
-          const sch=schNz>0?Math.round(schSum/schNz):null;
-          const hc2=hcCnt>0?hcSum:null;
-          const ou2=(sch!=null&&hc2!=null)?sch-hc2:null;
-          td.textContent=ou2!=null?(ou2>0?'+':'')+ou2:'—';
-          if(ou2!=null) td.className=ou2>=0?'green':'red';
-        } else { td.textContent='—'; }
-      }
-
-      // LOB rows
-      for (const lob of lobs) {
-        const row = tbody.insertRow();
-        row.className = 'wt-lob';
-        const lobTd = row.insertCell();
-        lobTd.textContent = '  ' + lob;
-        lobTd.className   = 'wt-lob-name';
-        lobTd.style.paddingLeft = '22px';
-
-        for (let wi = 0; wi < weekSerials.length; wi++) {
-          const wkMon = weekSerials[wi];
-          const d  = agg[wkMon][lob];
-          const td = row.insertCell();
-          if (!d) { td.textContent = '—'; continue; }
-          const v = metric.val(d, wkMon, lob);
-          if (v == null) { td.textContent = '—'; continue; }
-          td.textContent = metric.fmt(v);
-          const cls = metric.cls(v);
-          if (cls) td.className = cls;
-          if (metric.key === 'ou') {
-            td.style.color      = v >= 0 ? '#155724' : '#8b1a1a';
-            td.style.fontWeight = '600';
-          }
+        const td = row.insertCell();
+        let v;
+        if (lobKey) {
+          const d = agg[wkMon][lobKey];
+          v = d ? m.lobVal(d, wkMon, lobKey) : null;
+        } else {
+          // channel aggregate
+          const lobsInCh = Object.values(
+            Object.fromEntries(Object.entries(agg[wkMon]).filter(([l]) => (lobMeta[l]||{}).channel === chKey))
+          );
+          const lobNames = Object.keys(agg[wkMon]).filter(l => (lobMeta[l]||{}).channel === chKey);
+          v = m.chAgg(lobsInCh, wkMon, lobNames);
+        }
+        if (v == null) { td.textContent = '—'; continue; }
+        td.textContent = m.fmt(v);
+        const cls = m.cls(v);
+        if (cls) td.className = cls;
+        if (m.ouStyle) {
+          td.style.color      = v >= 0 ? '#155724' : '#8b1a1a';
+          td.style.fontWeight = '600';
         }
       }
     }
-
-    section.appendChild(table);
-    container.appendChild(section);
   }
+
+  for (const ch of channelOrder) {
+    const lobs = channelLobs[ch] || [];
+
+    // ── Channel header row ──────────────────────────────────────────────────
+    const chRow = tbody.insertRow();
+    chRow.className = 'wt-channel';
+    const chTd = chRow.insertCell();
+    chTd.textContent = ch;
+    chTd.setAttribute('colspan', weekSerials.length + 1);
+
+    // Channel aggregate metric rows (only when no individual LOB filter)
+    if (!filterLb) {
+      appendMetricRows(null, ch, false);
+    }
+
+    // ── Individual LOB blocks ───────────────────────────────────────────────
+    for (const lob of lobs) {
+      // LOB sub-header
+      const lobHdr = tbody.insertRow();
+      lobHdr.className = 'wt-channel';
+      lobHdr.style.background = '#e8f4f8';
+      const lobHdrTd = lobHdr.insertCell();
+      lobHdrTd.textContent = '  ' + lob;
+      lobHdrTd.style.paddingLeft = '18px';
+      lobHdrTd.style.fontSize = '12px';
+      lobHdrTd.style.color = '#0a3a55';
+      lobHdrTd.setAttribute('colspan', weekSerials.length + 1);
+
+      // LOB metric rows
+      appendMetricRows(lob, ch, true);
+    }
+  }
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'wt-section table-wrap';
+  wrapper.appendChild(table);
+  container.appendChild(wrapper);
 }
 
 // ── Tab switching ─────────────────────────────────────────────────────────────
