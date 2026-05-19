@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>OCC IDP Dashboard</title>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
-<script src="https://js.live.net/v7.2/OneDrive.js"></script>
 <style>
 /* ── Reset & base ───────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -2199,79 +2198,54 @@ function renderWeeklyTrend(filterCh, filterVd, filterBr, filterLb) {
   container.appendChild(wrapper);
 }
 
-// ── SharePoint / OneDrive Picker ──────────────────────────────────────────────
+// ── SharePoint via Power Automate ─────────────────────────────────────────────
 function launchSharePointPicker() {
-  const clientId  = localStorage.getItem('sp_client_id');
-  const tenantUrl = localStorage.getItem('sp_tenant_url') || '';
-  if (!clientId) { showSpModal(); return; }
-  openOneDrivePicker(clientId, tenantUrl);
+  const flowUrl = localStorage.getItem('sp_flow_url') || '';
+  if (!flowUrl) { showSpModal(); return; }
+  fetchFromSharePoint(flowUrl);
 }
 
 function showSpModal() {
-  document.getElementById('sp-client-id').value   = localStorage.getItem('sp_client_id')  || '';
-  document.getElementById('sp-tenant-url').value  = localStorage.getItem('sp_tenant_url') || '';
+  document.getElementById('sp-flow-url').value = localStorage.getItem('sp_flow_url') || '';
   document.getElementById('sp-modal-overlay').classList.add('open');
 }
 function closeSpModal() {
   document.getElementById('sp-modal-overlay').classList.remove('open');
 }
 function clearSpConfig() {
-  localStorage.removeItem('sp_client_id');
-  localStorage.removeItem('sp_tenant_url');
-  document.getElementById('sp-client-id').value  = '';
-  document.getElementById('sp-tenant-url').value = '';
+  localStorage.removeItem('sp_flow_url');
+  document.getElementById('sp-flow-url').value = '';
 }
 function saveSpConfig() {
-  const clientId  = document.getElementById('sp-client-id').value.trim();
-  const tenantUrl = document.getElementById('sp-tenant-url').value.trim();
-  if (!clientId) { alert('Azure AD Client ID is required.'); return; }
-  localStorage.setItem('sp_client_id', clientId);
-  if (tenantUrl) localStorage.setItem('sp_tenant_url', tenantUrl);
+  const flowUrl = document.getElementById('sp-flow-url').value.trim();
+  if (!flowUrl) { alert('Power Automate Flow URL is required.'); return; }
+  localStorage.setItem('sp_flow_url', flowUrl);
   closeSpModal();
-  openOneDrivePicker(clientId, tenantUrl);
+  fetchFromSharePoint(flowUrl);
 }
 
-function openOneDrivePicker(clientId, tenantUrl) {
-  const advanced = { filter: '.xlsb,.xlsx,.xlsm', queryParameters: 'select=id,name,size,file,@microsoft.graph.downloadUrl' };
-  if (tenantUrl) advanced.endpointHint = tenantUrl;
-
-  const pickerOptions = {
-    clientId,
-    action: 'download',
-    multiSelect: true,
-    advanced,
-    success: async function(response) {
-      const status = document.getElementById('upload-status');
-      status.textContent = '⏳ Downloading from SharePoint…';
-      try {
-        const files = await Promise.all((response.value || []).map(async f => {
-          const url = f['@microsoft.graph.downloadUrl'];
-          const res = await fetch(url);
-          if (!res.ok) throw new Error(`Failed to download "${f.name}"`);
-          const blob = await res.blob();
-          return new File([blob], f.name, { type: blob.type });
-        }));
-        // Use loadFiles if dashboard not yet loaded, addFiles if adding to existing data
-        if (!cfFcastCache) loadFiles(files);
-        else addFiles(files);
-      } catch (e) {
-        document.getElementById('upload-status').textContent = '✗ ' + e.message;
-        console.error(e);
-      }
-    },
-    cancel: function() {},
-    error: function(e) {
-      const msg = (e && e.message) ? e.message : JSON.stringify(e);
-      document.getElementById('upload-status').textContent = '✗ Picker error — check Client ID or permissions.';
-      console.error('OneDrive picker error:', msg);
-    }
-  };
-
+async function fetchFromSharePoint(flowUrl) {
+  const status = document.getElementById('upload-status');
+  status.textContent = '⏳ Fetching from SharePoint…';
   try {
-    OneDrive.open(pickerOptions);
-  } catch(e) {
-    alert('OneDrive picker could not be launched. The OneDrive.js SDK may be blocked. Try whitelisting js.live.net in your network/firewall.');
-    console.error(e);
+    const res = await fetch('/api/sp-proxy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: flowUrl })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(err.error || res.statusText);
+    }
+    const blob = await res.blob();
+    // Guess filename from flow URL or use default
+    const fileName = 'SharePoint_IDP_Report.xlsb';
+    const file = new File([blob], fileName, { type: blob.type });
+    if (!cfFcastCache) loadFiles([file]);
+    else addFiles([file]);
+  } catch (e) {
+    status.textContent = '✗ SharePoint fetch failed: ' + e.message;
+    console.error('fetchFromSharePoint error', e);
   }
 }
 
@@ -2284,26 +2258,28 @@ function switchTab(name) {
 }
 </script>
 
-<!-- ── SharePoint Config Modal ───────────────────────────────────────── -->
+<!-- ── SharePoint via Power Automate Modal ───────────────────────────── -->
 <div id="sp-modal-overlay">
   <div id="sp-modal">
     <h3>☁ Connect to SharePoint</h3>
-    <p class="sp-sub">A one-time setup using your organization's Azure AD Client ID. Ask your IT admin if you don't have one.</p>
+    <p class="sp-sub">No Azure AD needed. Paste the <strong>Power Automate HTTP trigger URL</strong> for your IDP report file. The dashboard will pull the file directly from SharePoint each time you click the button.</p>
 
-    <label>Azure AD Client ID *</label>
-    <input type="text" id="sp-client-id" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
-
-    <label>SharePoint Site URL (optional)</label>
-    <input type="text" id="sp-tenant-url" placeholder="https://yourcompany.sharepoint.com">
+    <label>Power Automate Flow URL *</label>
+    <input type="text" id="sp-flow-url" placeholder="https://prod-xx.westus.logic.azure.com:443/workflows/...">
 
     <div class="sp-note">
-      <strong>IT Admin setup:</strong> Register an app in Azure AD → Authentication → add this dashboard URL as a Redirect URI → API Permissions: <em>Files.Read, Files.Read.All, Sites.Read.All</em> (Microsoft Graph, delegated).
+      <strong>One-time Power Automate setup (no Azure AD):</strong><br>
+      1. Go to <em>make.powerautomate.com</em> → Create → Instant cloud flow<br>
+      2. Trigger: <em>"When an HTTP request is received"</em> (no auth required)<br>
+      3. Action: <em>"Get file content"</em> → SharePoint → select your IDP report file<br>
+      4. Action: <em>"Response"</em> → Status 200 · Body: <code>@{body('Get_file_content')}</code> · Content-Type header: <code>application/octet-stream</code><br>
+      5. Save → copy the <strong>HTTP POST URL</strong> → paste above
     </div>
 
     <div class="sp-btns">
-      <span class="sp-reset" onclick="clearSpConfig()">Clear saved credentials</span>
+      <span class="sp-reset" onclick="clearSpConfig()">Clear saved URL</span>
       <button class="sp-cancel" onclick="closeSpModal()">Cancel</button>
-      <button class="sp-save" onclick="saveSpConfig()">Save &amp; Open Picker</button>
+      <button class="sp-save" onclick="saveSpConfig()">Save &amp; Load File</button>
     </div>
   </div>
 </div>
