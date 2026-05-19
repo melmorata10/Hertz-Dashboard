@@ -389,6 +389,12 @@ tr.lob-row td:first-child { padding-left: 22px; color: #1a3a50; }
   background: #daeaf3; font-weight: 700; color: #0a3a55; font-size: 13px;
   padding: 8px 12px;
 }
+#weekly-trend-body tr.wt-week-repeat td {
+  background: #f0f6fa; color: #4a7a9b; font-size: 10px; font-weight: 700;
+  padding: 4px 14px; text-align: center; border-top: 1px solid #cddce8;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+#weekly-trend-body tr.wt-week-repeat td:first-child { text-align: left; }
 #weekly-trend-body tr.wt-lob td { background: #fff; color: #1a2a38; }
 #weekly-trend-body tr.wt-lob:nth-child(even) td { background: #f7fbfd; }
 </style>
@@ -2057,6 +2063,18 @@ function renderWeeklyTrend(filterCh, filterVd, filterBr, filterLb) {
 
   const tbody = table.createTBody();
 
+  // Helper: repeat the week-label header row under each LOB / channel block
+  function appendWeekRepeatRow() {
+    const row = tbody.insertRow();
+    row.className = 'wt-week-repeat';
+    const nameTd = row.insertCell();
+    nameTd.textContent = 'LOB / Metric';
+    for (const lbl of wkLabels) {
+      const td = row.insertCell();
+      td.textContent = lbl;
+    }
+  }
+
   // Helper: render metric rows for a given entity
   function appendMetricRows(lobKey, chKey, isIndented) {
     for (const m of metrics) {
@@ -2105,6 +2123,9 @@ function renderWeeklyTrend(filterCh, filterVd, filterBr, filterLb) {
     chTd.textContent = ch;
     chTd.setAttribute('colspan', weekSerials.length + 1);
 
+    // Week-label repeat row under channel header
+    appendWeekRepeatRow();
+
     // Channel aggregate metric rows (only when no individual LOB filter)
     if (!filterLb) {
       appendMetricRows(null, ch, false);
@@ -2122,6 +2143,9 @@ function renderWeeklyTrend(filterCh, filterVd, filterBr, filterLb) {
       lobHdrTd.style.fontSize = '12px';
       lobHdrTd.style.color = '#0a3a55';
       lobHdrTd.setAttribute('colspan', weekSerials.length + 1);
+
+      // Week-label repeat row under LOB sub-header
+      appendWeekRepeatRow();
 
       // LOB metric rows
       appendMetricRows(lob, ch, true);
