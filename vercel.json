@@ -1,0 +1,13 @@
+{
+  "functions": {
+    "api/save.js": {
+      "maxDuration": 30
+    },
+    "api/load.js": {
+      "maxDuration": 30
+    },
+    "api/sp-proxy.js": {
+      "maxDuration": 30
+    }
+  }
+}
