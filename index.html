@@ -787,15 +787,46 @@ function cell(val, cls='') {
 }
 
 // ── File input & drag-drop ────────────────────────────────────────────────────
+// Read all files into ArrayBuffers immediately before resetting the input.
+// Safari can revoke File object access once the input is reset, so we
+// snapshot the buffers first, then pass them through as synthetic File objects.
+function snapshotAndLoad(fileList, handler) {
+  const files = Array.from(fileList);
+  if (!files.length) return;
+  let done = 0;
+  const buffers = new Array(files.length);
+  files.forEach((file, i) => {
+    const reader = new FileReader();
+    reader.onload = ev => {
+      buffers[i] = { name: file.name, buffer: ev.target.result };
+      if (++done === files.length) {
+        // Reconstruct File objects from buffered data
+        const rebuilt = buffers.map(b =>
+          new File([b.buffer], b.name, { type: 'application/octet-stream' })
+        );
+        handler(rebuilt);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
 document.getElementById('file-input').addEventListener('change', e => {
   if (!e.target.files.length) return;
-  if (cfFcastCache) addFiles(Array.from(e.target.files));
-  else loadFiles(Array.from(e.target.files));
-  e.target.value = ''; // reset so same files can be re-selected
+  const target = e.target;
+  snapshotAndLoad(target.files, files => {
+    target.value = '';
+    if (cfFcastCache) addFiles(files);
+    else loadFiles(files);
+  });
 });
 document.getElementById('add-file-input').addEventListener('change', e => {
-  if (e.target.files.length) addFiles(Array.from(e.target.files));
-  e.target.value = ''; // reset so same file can be re-added
+  if (!e.target.files.length) return;
+  const target = e.target;
+  snapshotAndLoad(target.files, files => {
+    target.value = '';
+    addFiles(files);
+  });
 });
 
 const dz = document.getElementById('drop-zone');
