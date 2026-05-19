@@ -124,6 +124,19 @@ body {
   flex-shrink: 0;
 }
 #copy-btn:hover { background: #0097a7; }
+#copy-view-btn {
+  background: transparent;
+  color: #7ecfee;
+  border: 1px solid rgba(126,207,238,0.6);
+  border-radius: 5px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+#copy-view-btn:hover { background: rgba(126,207,238,0.15); }
 #share-saving { color: #7ecfee; font-size: 11px; }
 
 /* ── Main content ───────────────────────────────────────────────────── */
@@ -458,6 +471,7 @@ tr.lob-row td:first-child { padding-left: 22px; color: #1a3a50; }
     <div id="share-panel">
       <input id="share-url" type="text" readonly>
       <button id="copy-btn" onclick="copyShareLink()">📋 Copy link</button>
+      <button id="copy-view-btn" onclick="copyViewLink()">👁 View-only link</button>
     </div>
     <input type="file" id="add-file-input" accept=".xlsb,.xlsx,.xlsm" multiple>
     <button id="add-files-btn" onclick="document.getElementById('add-file-input').click()">＋ Add files</button>
@@ -982,6 +996,18 @@ function copyShareLink() {
   btn.textContent = '✓ Copied!';
   setTimeout(() => { btn.textContent = '📋 Copy link'; }, 2000);
 }
+function copyViewLink() {
+  const base = document.getElementById('share-url').value;
+  const viewUrl = base.includes('?') ? base + '&view=1' : base + '?view=1';
+  navigator.clipboard.writeText(viewUrl).catch(() => {
+    const ta = document.createElement('textarea');
+    ta.value = viewUrl; document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta);
+  });
+  const btn = document.getElementById('copy-view-btn');
+  btn.textContent = '✓ Copied!';
+  setTimeout(() => { btn.textContent = '👁 View-only link'; }, 2000);
+}
 
 // ── Rebuild lobMeta + slicerOpts from cached rows (used after shared-link restore) ──
 function rebuildSlicerOptsFromCache() {
@@ -1015,7 +1041,9 @@ function rebuildSlicerOptsFromCache() {
 
 // ── Auto-load from shareable link ─────────────────────────────────────────────
 (async function checkSharedLink() {
-  const key = new URLSearchParams(location.search).get('r');
+  const params  = new URLSearchParams(location.search);
+  const key     = params.get('r');
+  const viewOnly = params.get('view') === '1';
   if (!key) return;
   const statusEl = document.getElementById('upload-status');
   statusEl.textContent = '⏳ Loading shared report…';
@@ -1034,10 +1062,12 @@ function rebuildSlicerOptsFromCache() {
     populateSlicers();
     applySlicers();
     document.getElementById('dashboard').style.display = 'block';
-    document.getElementById('add-files-btn').style.display = 'inline-block';
-    document.getElementById('sp-btn').style.display = 'inline-block';
     document.getElementById('upload-btn-wrap').style.display = 'none';
-    statusEl.textContent = '✓ Loaded from shared link';
+    if (!viewOnly) {
+      document.getElementById('add-files-btn').style.display = 'inline-block';
+      document.getElementById('sp-btn').style.display = 'inline-block';
+    }
+    statusEl.textContent = viewOnly ? '✓ View-only' : '✓ Loaded from shared link';
     // Show the share panel with current URL so it can be re-shared
     const urlEl   = document.getElementById('share-url');
     const panelEl = document.getElementById('share-panel');
