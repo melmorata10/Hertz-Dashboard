@@ -1025,7 +1025,12 @@ async function saveToCloud() {
     panelEl.style.display  = 'flex';
   } catch(err) {
     console.warn('Cloud save failed:', err);
-    savingEl.textContent = '⚠️ Share link unavailable — check function logs';
+    const msg = err.message || '';
+    if (msg.includes('too large') || msg.includes('413') || msg.includes('limit')) {
+      savingEl.textContent = '⚠️ Data too large to save — try fewer files at once';
+    } else {
+      savingEl.textContent = '⚠️ Share link unavailable — ' + (msg || 'check console');
+    }
   }
 }
 function copyShareLink() {
