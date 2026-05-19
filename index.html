@@ -994,6 +994,30 @@ function extractColMap(cache) {
   for (const k in cache) if (k !== 'rows') map[k] = cache[k];
   return map;
 }
+// Compact fcast rows to only the ~14 columns we actually use (reduces payload 5-10x)
+function compactFcastRows() {
+  const { rows, cLob, cCh, cDate2, cRcv, cHndl, cSTA, cBase,
+          cFcV, cFcAH, cHT, cSch, cPres, cVendor, cBrand } = cfFcastCache;
+  return rows.slice(1).filter(Boolean).map(r => [
+    r[cLob]??'', r[cCh]??'', r[cDate2]??null, r[cRcv]??0, r[cHndl]??0,
+    r[cSTA]??0, r[cBase]??0, r[cFcV]??0, r[cFcAH]??0,
+    r[cHT]??0, r[cSch]??0, r[cPres]??0,
+    r[cVendor]??'', r[cBrand]??''
+  ]);
+}
+// Compact sched rows to only the 4 columns used for ADH
+function compactSchedRows() {
+  if (!cfSchedCache) return null;
+  const { rows, cLob, cAdhS, cAdhM, cDate } = cfSchedCache;
+  return rows.slice(1).filter(Boolean).map(r => [
+    r[cLob]??'', r[cAdhS]??0, r[cAdhM]??0, r[cDate]??null
+  ]);
+}
+// Fixed compact column indices (used on restore)
+const FCAST_COLS = { cLob:0,cCh:1,cDate2:2,cRcv:3,cHndl:4,cSTA:5,cBase:6,
+                     cFcV:7,cFcAH:8,cHT:9,cSch:10,cPres:11,cVendor:12,cBrand:13 };
+const SCHED_COLS = { cLob:0, cAdhS:1, cAdhM:2, cDate:3 };
+
 async function saveToCloud() {
   if (!cfFcastCache) return;
   const savingEl = document.getElementById('share-saving');
@@ -1003,8 +1027,9 @@ async function saveToCloud() {
   panelEl.style.display  = 'none';
   try {
     const payload = {
-      fcast: { rows: cfFcastCache.rows, cols: extractColMap(cfFcastCache) },
-      sched: cfSchedCache ? { rows: cfSchedCache.rows, cols: extractColMap(cfSchedCache) } : null
+      v: 2, // compact format version
+      fcast: compactFcastRows(),
+      sched: compactSchedRows()
     };
     const compressed = await compressData(payload);
     // safe base64 for large buffers
@@ -1099,8 +1124,15 @@ function rebuildSlicerOptsFromCache() {
     if (!res.ok) throw new Error('Report not found');
     const bytes = new Uint8Array(await res.arrayBuffer());
     const payload = await decompressData(bytes);
-    cfFcastCache = { rows: payload.fcast.rows, ...payload.fcast.cols };
-    cfSchedCache = payload.sched ? { rows: payload.sched.rows, ...payload.sched.cols } : null;
+    if (payload.v === 2) {
+      // Compact format: fcast/sched are plain arrays of compact rows
+      cfFcastCache = { rows: [null, ...payload.fcast], ...FCAST_COLS };
+      cfSchedCache = payload.sched ? { rows: [null, ...payload.sched], ...SCHED_COLS } : null;
+    } else {
+      // Legacy v1 format: fcast/sched have {rows, cols} shape
+      cfFcastCache = { rows: payload.fcast.rows, ...payload.fcast.cols };
+      cfSchedCache = payload.sched ? { rows: payload.sched.rows, ...payload.sched.cols } : null;
+    }
     rebuildSlicerOptsFromCache();
     rebuildEntRows('', '', '', '', '', '');
     rebuildIntervalRows('', '', '', '', '', '');
