@@ -819,6 +819,7 @@ dz.addEventListener('drop', e => {
 function loadFiles(files) {
   cfFcastCache = null;
   cfSchedCache = null;
+  try { sessionStorage.removeItem('occ_data'); sessionStorage.removeItem('occ_r'); } catch(e) {}
   let processed = 0;
   document.getElementById('upload-status').textContent = `Reading 0/${files.length}…`;
 
@@ -1014,6 +1015,8 @@ async function saveToCloud() {
     let binary = '';
     for (let i = 0; i < compressed.length; i++) binary += String.fromCharCode(compressed[i]);
     const b64 = btoa(binary);
+    // ── Cache in sessionStorage immediately so refresh survives before cloud save completes ──
+    try { sessionStorage.setItem('occ_data', b64); } catch(e) {}
     const res = await fetch('/api/save', {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
@@ -1024,6 +1027,7 @@ async function saveToCloud() {
     const url = new URL(location.href);
     url.searchParams.set('r', key);
     history.replaceState(null, '', url.toString());
+    try { sessionStorage.setItem('occ_r', key); } catch(e) {}
     urlEl.value = url.toString();
     savingEl.style.display = 'none';
     panelEl.style.display  = 'flex';
@@ -1088,12 +1092,60 @@ function rebuildSlicerOptsFromCache() {
   }
 }
 
-// ── Auto-load from shareable link ─────────────────────────────────────────────
+// ── Auto-load from shareable link (or session cache) ─────────────────────────
 (async function checkSharedLink() {
-  const params  = new URLSearchParams(location.search);
-  const key     = params.get('r');
+  const params   = new URLSearchParams(location.search);
+  let   key      = params.get('r');
   const viewOnly = params.get('view') === '1';
-  if (!key) return;
+
+  // ── No URL key — check sessionStorage for session cache ──────────────────
+  if (!key) {
+    let cachedData = null;
+    let cachedKey  = null;
+    try { cachedData = sessionStorage.getItem('occ_data'); cachedKey = sessionStorage.getItem('occ_r'); } catch(e) {}
+    if (!cachedData) return; // nothing to restore
+
+    const statusEl = document.getElementById('upload-status');
+    statusEl.textContent = '↻ Restoring your session…';
+    document.getElementById('drop-zone').style.display = 'none';
+    try {
+      const bytes   = new Uint8Array(atob(cachedData).split('').map(c => c.charCodeAt(0)));
+      const payload = await decompressData(bytes);
+      if (payload.v === 2) {
+        cfFcastCache = { rows: [null, ...payload.fcast], ...FCAST_COLS };
+        cfSchedCache = payload.sched ? { rows: [null, ...payload.sched], ...SCHED_COLS } : null;
+      } else {
+        cfFcastCache = { rows: payload.fcast.rows, ...payload.fcast.cols };
+        cfSchedCache = payload.sched ? { rows: payload.sched.rows, ...payload.sched.cols } : null;
+      }
+      rebuildSlicerOptsFromCache();
+      rebuildEntRows('', '', '', '', '', '');
+      rebuildIntervalRows('', '', '', '', '', '');
+      rebuildVendorRows('', '', '', '', '', '');
+      populateSlicers();
+      applySlicers();
+      document.getElementById('dashboard').style.display = 'block';
+      document.getElementById('upload-btn-wrap').style.display = 'none';
+      document.getElementById('add-files-btn').style.display = 'inline-block';
+      document.getElementById('sp-btn').style.display = 'inline-block';
+      statusEl.textContent = '✓ Session restored';
+      // Restore share panel URL if cloud key is known
+      if (cachedKey) {
+        const url = new URL(location.href);
+        url.searchParams.set('r', cachedKey);
+        history.replaceState(null, '', url.toString());
+        const urlEl   = document.getElementById('share-url');
+        const panelEl = document.getElementById('share-panel');
+        if (urlEl && panelEl) { urlEl.value = url.toString(); panelEl.style.display = 'flex'; }
+      }
+    } catch(e) {
+      try { sessionStorage.removeItem('occ_data'); } catch(_) {}
+      document.getElementById('drop-zone').style.display = 'flex';
+      console.error('Session restore failed:', e);
+    }
+    return;
+  }
+
   const statusEl = document.getElementById('upload-status');
   statusEl.textContent = '⏳ Loading shared report…';
   document.getElementById('drop-zone').style.display = 'none';
