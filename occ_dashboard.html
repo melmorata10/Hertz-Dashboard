@@ -68,6 +68,20 @@ body {
 }
 #upload-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(0,188,212,0.5); }
 #upload-status { color: #7ecfee; font-size: 11px; margin-top: 4px; text-align: right; }
+#add-file-input { display: none; }
+#add-files-btn {
+  background: transparent;
+  color: #7ecfee;
+  border: 1.5px solid rgba(126,207,238,0.5);
+  border-radius: 8px;
+  padding: 9px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: none;
+}
+#add-files-btn:hover { background: rgba(126,207,238,0.1); border-color: #7ecfee; }
 #share-panel {
   display: none;
   margin-top: 8px;
@@ -354,6 +368,8 @@ tr.lob-row td:first-child { padding-left: 22px; color: #1a3a50; }
   </div>
   <div id="header-right">
     <div id="week-badge"></div>
+    <input type="file" id="add-file-input" accept=".xlsb,.xlsx,.xlsm" multiple>
+    <button id="add-files-btn" onclick="document.getElementById('add-file-input').click()">＋ Add files</button>
     <div id="upload-btn-wrap">
       <input type="file" id="file-input" accept=".xlsb,.xlsx,.xlsm" multiple>
       <button id="upload-btn" onclick="document.getElementById('file-input').click()">⬆ Upload files</button>
@@ -382,6 +398,12 @@ tr.lob-row td:first-child { padding-left: 22px; color: #1a3a50; }
 
     <!-- Slicers -->
     <div id="slicers-bar">
+      <div class="slicer-group">
+        <div class="slicer-label">Week</div>
+        <select id="slicer-week" class="slicer-select" onchange="applySlicers()">
+          <option value="">All Weeks</option>
+        </select>
+      </div>
       <div class="slicer-group">
         <div class="slicer-label">Date</div>
         <select id="slicer-date" class="slicer-select" onchange="applySlicers()">
@@ -554,6 +576,28 @@ tr.lob-row td:first-child { padding-left: 22px; color: #1a3a50; }
         </table>
       </div>
 
+      <!-- Week over Week Table -->
+      <div class="exec-section-title" id="exec-wow-title" style="display:none;">📅 Week over Week — Channel Performance</div>
+      <div class="table-wrap" id="exec-wow-wrap" style="display:none; margin-bottom:28px;">
+        <table id="exec-wow-table">
+          <thead>
+            <tr>
+              <th>Week</th>
+              <th>Channel</th>
+              <th>FC Vol</th>
+              <th>FCV %</th>
+              <th>SL %</th>
+              <th>AHT w/ ACW</th>
+              <th>Schedule HC</th>
+              <th>Base HC Req</th>
+              <th>Net O/U</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="exec-wow-body"></tbody>
+        </table>
+      </div>
+
       <!-- Outlier Report -->
       <div class="exec-section-title" style="color:#8b1a1a;">⚠ Outlier Report — Lines Requiring Attention</div>
       <div id="exec-no-outliers" style="display:none; padding:16px; color:#155724; background:#d4edda; border-radius:8px; font-weight:600; margin-bottom:12px;">
@@ -589,7 +633,7 @@ tr.lob-row td:first-child { padding-left: 22px; color: #1a3a50; }
 let entRows    = [];
 let itvlRows   = [];
 let lobMeta    = {};   // C_LOB → { channel, vendor, brand }
-let slicerOpts = { channels: [], vendors: [], brands: [], dates: new Map() };
+let slicerOpts = { channels: new Set(), vendors: new Set(), brands: new Set(), dates: new Map(), weeks: new Map() };
 let cfFcastCache = null;  // raw cf_fcast rows + col indices
 let cfSchedCache = null;  // raw cf_sched rows + col indices
 let vendorRows   = [];    // aggregated per-vendor-per-LOB rows for Vendor tab
@@ -608,6 +652,20 @@ function excelDateToStr(serial) {
   const d = new Date(Date.UTC(1900, 0, 1) + (serial - (serial > 59 ? 2 : 1)) * 86400000);
   return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
 }
+function weekMondaySerial(serial) {
+  // Returns the Excel serial of the Monday of the week containing the given serial
+  const baseMs  = Date.UTC(1899, 11, 30);
+  const dateMs  = baseMs + serial * 86400000;
+  const day     = new Date(dateMs).getUTCDay(); // 0=Sun
+  const diff    = day === 0 ? -6 : 1 - day;
+  return Math.round((dateMs + diff * 86400000 - baseMs) / 86400000);
+}
+function weekLabel(mondaySerial) {
+  const d = new Date(Date.UTC(1900, 0, 1) + (mondaySerial - (mondaySerial > 59 ? 2 : 1)) * 86400000);
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(d.getUTCDate()).padStart(2, '0');
+  return `Week of ${mm}/${dd}`;
+}
 const asPct = v => (v == null || isNaN(v)) ? null : parseFloat((v * 100).toFixed(1));
 
 function colorSL(v)  { if (v==null) return ''; return v>=80?'green':v>=70?'yellow':'red'; }
@@ -622,6 +680,10 @@ function cell(val, cls='') {
 // ── File input & drag-drop ────────────────────────────────────────────────────
 document.getElementById('file-input').addEventListener('change', e => {
   if (e.target.files.length) loadFiles(Array.from(e.target.files));
+});
+document.getElementById('add-file-input').addEventListener('change', e => {
+  if (e.target.files.length) addFiles(Array.from(e.target.files));
+  e.target.value = ''; // reset so same file can be re-added
 });
 
 const dz = document.getElementById('drop-zone');
@@ -642,9 +704,9 @@ function loadFiles(files) {
   function readNext(idx) {
     if (idx >= files.length) {
       // All files parsed — rebuild views
-      rebuildEntRows('', '', '', '', '');
-      rebuildIntervalRows('', '', '', '', '');
-      rebuildVendorRows('', '', '', '', '');
+      rebuildEntRows('', '', '', '', '', '');
+      rebuildIntervalRows('', '', '', '', '', '');
+      rebuildVendorRows('', '', '', '', '', '');
       populateSlicers();
       applySlicers();
 
@@ -658,6 +720,7 @@ function loadFiles(files) {
 
       document.getElementById('drop-zone').style.display = 'none';
       document.getElementById('dashboard').style.display = 'block';
+      document.getElementById('add-files-btn').style.display = 'inline-block';
       document.getElementById('upload-status').textContent =
         `✓ ${files.length} file${files.length > 1 ? 's' : ''} loaded`;
 
@@ -697,6 +760,61 @@ function loadFiles(files) {
         }
         processed++;
         document.getElementById('upload-status').textContent = `Reading ${processed}/${files.length}…`;
+        readNext(idx + 1);
+      } catch(err) {
+        document.getElementById('upload-status').textContent = `✗ Error in "${file.name}": ${err.message}`;
+        console.error(err);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+  readNext(0);
+}
+
+// ── Append additional files to already-loaded data ────────────────────────────
+function addFiles(files) {
+  if (!cfFcastCache) { loadFiles(files); return; } // no data yet — treat as initial load
+  let processed = 0;
+  document.getElementById('upload-status').textContent = `Adding 0/${files.length}…`;
+
+  function readNext(idx) {
+    if (idx >= files.length) {
+      // Rebuild slicers and views with merged data
+      rebuildSlicerOptsFromCache();
+      rebuildEntRows('', '', '', '', '', '');
+      rebuildIntervalRows('', '', '', '', '', '');
+      rebuildVendorRows('', '', '', '', '', '');
+      populateSlicers();
+      applySlicers();
+      document.getElementById('upload-status').textContent =
+        `✓ Added ${files.length} file${files.length > 1 ? 's' : ''} — ${
+          [...slicerOpts.weeks.values()].join(', ')}`;
+      saveToCloud();
+      return;
+    }
+    const file = files[idx];
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const wb = XLSX.read(new Uint8Array(ev.target.result), { type: 'array', cellDates: false });
+        if (!wb.Sheets['cf_fcast']) {
+          document.getElementById('upload-status').textContent =
+            `✗ "${file.name}" missing sheet "cf_fcast" — skipped.`;
+          readNext(idx + 1); return;
+        }
+        // Append rows (always skip header)
+        const ws = wb.Sheets['cf_fcast'];
+        if (ws) {
+          const newRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null, raw: true });
+          cfFcastCache.rows.push(...newRows.slice(1));
+        }
+        const ws2 = wb.Sheets['cf_sched'];
+        if (ws2 && cfSchedCache) {
+          const newRows2 = XLSX.utils.sheet_to_json(ws2, { header: 1, defval: null, raw: true });
+          cfSchedCache.rows.push(...newRows2.slice(1));
+        }
+        processed++;
+        document.getElementById('upload-status').textContent = `Adding ${processed}/${files.length}…`;
         readNext(idx + 1);
       } catch(err) {
         document.getElementById('upload-status').textContent = `✗ Error in "${file.name}": ${err.message}`;
@@ -771,7 +889,7 @@ function copyShareLink() {
 function rebuildSlicerOptsFromCache() {
   if (!cfFcastCache) return;
   lobMeta    = {};
-  slicerOpts = { channels: new Set(), vendors: new Set(), brands: new Set(), dates: new Map() };
+  slicerOpts = { channels: new Set(), vendors: new Set(), brands: new Set(), dates: new Map(), weeks: new Map() };
   const { rows, cLob, cCh, cDate2, cVendor, cBrand } = cfFcastCache;
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
@@ -789,6 +907,10 @@ function rebuildSlicerOptsFromCache() {
       const serial = Math.floor(date2);
       if (serial > 0 && !slicerOpts.dates.has(serial))
         slicerOpts.dates.set(serial, excelDateToStr(serial));
+      if (serial > 0) {
+        const wkMon = weekMondaySerial(serial);
+        if (!slicerOpts.weeks.has(wkMon)) slicerOpts.weeks.set(wkMon, weekLabel(wkMon));
+      }
     }
   }
 }
@@ -808,12 +930,13 @@ function rebuildSlicerOptsFromCache() {
     cfFcastCache = { rows: payload.fcast.rows, ...payload.fcast.cols };
     cfSchedCache = payload.sched ? { rows: payload.sched.rows, ...payload.sched.cols } : null;
     rebuildSlicerOptsFromCache();
-    rebuildEntRows('', '', '', '', '');
-    rebuildIntervalRows('', '', '', '', '');
-    rebuildVendorRows('', '', '', '', '');
+    rebuildEntRows('', '', '', '', '', '');
+    rebuildIntervalRows('', '', '', '', '', '');
+    rebuildVendorRows('', '', '', '', '', '');
     populateSlicers();
     applySlicers();
     document.getElementById('dashboard').style.display = 'block';
+    document.getElementById('add-files-btn').style.display = 'inline-block';
     document.getElementById('upload-btn-wrap').style.display = 'none';
     statusEl.textContent = '✓ Loaded from shared link';
     // Show the share panel with current URL so it can be re-shared
@@ -839,7 +962,7 @@ function colIdx(headerRow, name) {
 // ── Parse cf_fcast → lobMeta + slicerOpts (single authoritative source) ──────
 function parseLobMeta(wb) {
   lobMeta = {};
-  slicerOpts = { channels: new Set(), vendors: new Set(), brands: new Set(), dates: new Map() };
+  slicerOpts = { channels: new Set(), vendors: new Set(), brands: new Set(), dates: new Map(), weeks: new Map() };
 
   const ws = wb.Sheets['cf_fcast'];
   if (!ws) return;
@@ -874,6 +997,10 @@ function parseLobMeta(wb) {
       const serial = Math.floor(date2);
       if (serial > 0 && !slicerOpts.dates.has(serial)) {
         slicerOpts.dates.set(serial, excelDateToStr(serial));
+      }
+      if (serial > 0) {
+        const wkMon = weekMondaySerial(serial);
+        if (!slicerOpts.weeks.has(wkMon)) slicerOpts.weeks.set(wkMon, weekLabel(wkMon));
       }
     }
   }
@@ -926,7 +1053,7 @@ function buildSchedAgg(dt) {
 }
 
 // ── Build itvlRows from cf_fcast, filtered by all active slicers ──────────────
-function rebuildIntervalRows(dt, ch, vd, br, lb) {
+function rebuildIntervalRows(wk, dt, ch, vd, br, lb) {
   itvlRows = [];
   if (!cfFcastCache) return;
   const { rows, cLob, cCh, cDate2, cRcv, cHndl, cSTA, cBase, cFcV, cFcAH, cHT, cSch, cPres, cDT, cVendor, cBrand } = cfFcastCache;
@@ -936,7 +1063,9 @@ function rebuildIntervalRows(dt, ch, vd, br, lb) {
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
     if (!r) continue;
-    if (dt && r[cDate2] != null && String(Math.floor(r[cDate2])) !== dt) continue;
+    const _serial = r[cDate2] != null ? Math.floor(r[cDate2]) : null;
+    if (wk && _serial != null) { const wkMon = parseInt(wk); if (_serial < wkMon || _serial > wkMon + 6) continue; }
+    if (dt && (_serial == null || String(_serial) !== dt)) continue;
     const lob      = r[cLob]    != null ? String(r[cLob]).trim()    : '';
     const rchannel = r[cCh]     != null ? String(r[cCh]).trim()     : '';
     const vendor   = cVendor >= 0 && r[cVendor] != null ? String(r[cVendor]).trim() : '';
@@ -985,7 +1114,7 @@ function rebuildIntervalRows(dt, ch, vd, br, lb) {
 }
 
 // ── Build vendorRows from cf_fcast keyed by vendor|LOB (preserves cross-vendor LOBs) ──
-function rebuildVendorRows(dt, ch, vd, br, lb) {
+function rebuildVendorRows(wk, dt, ch, vd, br, lb) {
   vendorRows = [];
   if (!cfFcastCache) return;
   const { rows, cLob, cCh, cDate2, cRcv, cHndl, cSTA, cBase,
@@ -995,7 +1124,9 @@ function rebuildVendorRows(dt, ch, vd, br, lb) {
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
     if (!r) continue;
-    if (dt && r[cDate2] != null && String(Math.floor(r[cDate2])) !== dt) continue;
+    const _serial = r[cDate2] != null ? Math.floor(r[cDate2]) : null;
+    if (wk && _serial != null) { const wkMon = parseInt(wk); if (_serial < wkMon || _serial > wkMon + 6) continue; }
+    if (dt && (_serial == null || String(_serial) !== dt)) continue;
     const lob     = r[cLob]    != null ? String(r[cLob]).trim()    : '';
     const channel = r[cCh]     != null ? String(r[cCh]).trim()     : '';
     const vendor  = cVendor >= 0 && r[cVendor] != null ? String(r[cVendor]).trim() : '(No Vendor)';
@@ -1050,7 +1181,7 @@ function rebuildVendorRows(dt, ch, vd, br, lb) {
 }
 
 // ── Build entRows from cached cf_fcast, filtered by all active slicers ────────
-function rebuildEntRows(dt, ch, vd, br, lb) {
+function rebuildEntRows(wk, dt, ch, vd, br, lb) {
   entRows = [];
   if (!cfFcastCache) return;
   const { rows, cLob, cCh, cDate2, cRcv, cHndl, cSTA, cBase,
@@ -1060,7 +1191,9 @@ function rebuildEntRows(dt, ch, vd, br, lb) {
   for (let i = 1; i < rows.length; i++) {
     const r = rows[i];
     if (!r) continue;
-    if (dt && r[cDate2] != null && String(Math.floor(r[cDate2])) !== dt) continue;
+    const _serial = r[cDate2] != null ? Math.floor(r[cDate2]) : null;
+    if (wk && _serial != null) { const wkMon = parseInt(wk); if (_serial < wkMon || _serial > wkMon + 6) continue; }
+    if (dt && (_serial == null || String(_serial) !== dt)) continue;
     const lob     = r[cLob] != null ? String(r[cLob]).trim() : '';
     const channel = r[cCh]  != null ? String(r[cCh]).trim()  : '';
     const vendor  = cVendor >= 0 && r[cVendor] != null ? String(r[cVendor]).trim() : '';
@@ -1203,6 +1336,8 @@ function populateSlicers() {
   const dateValues  = dateEntries.map(e => String(e[0]));
 
   fillSelect('slicer-date',    dateLabels, dateValues);
+  const weekEntries = [...slicerOpts.weeks.entries()].sort((a, b) => a[0] - b[0]);
+  fillSelect('slicer-week', weekEntries.map(e => e[1]), weekEntries.map(e => String(e[0])));
   fillSelect('slicer-channel', channels);
   fillSelect('slicer-vendor',  vendors);
   fillSelect('slicer-brand',   brands);
@@ -1219,7 +1354,7 @@ function fillSelect(id, labels, values) {
 }
 
 function resetSlicers() {
-  ['slicer-date','slicer-channel','slicer-vendor','slicer-brand','slicer-lob'].forEach(id => {
+  ['slicer-week','slicer-date','slicer-channel','slicer-vendor','slicer-brand','slicer-lob'].forEach(id => {
     document.getElementById(id).value = '';
   });
   applySlicers();
@@ -1237,14 +1372,36 @@ function onChannelChange() {
 }
 
 function applySlicers() {
+  const wk = document.getElementById('slicer-week').value;
   const dt = document.getElementById('slicer-date').value;
   const ch = document.getElementById('slicer-channel').value;
   const vd = document.getElementById('slicer-vendor').value;
   const br = document.getElementById('slicer-brand').value;
   const lb = document.getElementById('slicer-lob').value;
-  rebuildEntRows(dt, ch, vd, br, lb);
-  rebuildIntervalRows(dt, ch, vd, br, lb);
-  rebuildVendorRows(dt, ch, vd, br, lb);
+
+  // When a week is selected, cascade Date dropdown to show only dates in that week
+  if (wk) {
+    const wkMon = parseInt(wk);
+    const wkSun = wkMon + 6;
+    const dateEntries = [...slicerOpts.dates.entries()]
+      .filter(([serial]) => serial >= wkMon && serial <= wkSun)
+      .sort((a, b) => a[0] - b[0]);
+    fillSelect('slicer-date', dateEntries.map(e => e[1]), dateEntries.map(e => String(e[0])));
+    // If current dt is outside this week, clear it
+    if (dt && (parseInt(dt) < wkMon || parseInt(dt) > wkSun)) {
+      document.getElementById('slicer-date').value = '';
+    }
+  } else {
+    // Restore full date list
+    const dateEntries = [...slicerOpts.dates.entries()].sort((a, b) => a[0] - b[0]);
+    fillSelect('slicer-date', dateEntries.map(e => e[1]), dateEntries.map(e => String(e[0])));
+    if (dt) document.getElementById('slicer-date').value = dt; // restore selection if still valid
+  }
+
+  const activeDt = document.getElementById('slicer-date').value;
+  rebuildEntRows(wk, activeDt, ch, vd, br, lb);
+  rebuildIntervalRows(wk, activeDt, ch, vd, br, lb);
+  rebuildVendorRows(wk, activeDt, ch, vd, br, lb);
   const anyActive = ch || vd || br || lb;
 
   const tbody = document.getElementById('ent-body');
@@ -1639,6 +1796,74 @@ function renderExecSummary() {
   } else {
     RECS.sort((a, b) => a.pri - b.pri);
     recEl.innerHTML = RECS.map(r => `<p style="margin-bottom:10px;">${r.html}</p>`).join('');
+  }
+
+  // ── Week over Week section (only shown when multiple weeks are loaded) ─────────
+  const wowWrap  = document.getElementById('exec-wow-wrap');
+  const wowTitle = document.getElementById('exec-wow-title');
+  const wowBody  = document.getElementById('exec-wow-body');
+  wowBody.innerHTML = '';
+
+  const weekSerials = [...slicerOpts.weeks.keys()].sort((a, b) => a - b);
+  if (weekSerials.length > 1 && cfFcastCache) {
+    wowWrap.style.display  = '';
+    wowTitle.style.display = '';
+    const { rows, cLob, cCh, cDate2, cFcV, cRcv, cHndl, cSTA, cBase, cFcAH, cHT, cSch } = cfFcastCache;
+    for (const wkMon of weekSerials) {
+      const wkSun = wkMon + 6;
+      const wkChannels = {};
+      for (let i = 1; i < rows.length; i++) {
+        const r = rows[i];
+        if (!r) continue;
+        const serial = r[cDate2] != null ? Math.floor(r[cDate2]) : null;
+        if (serial == null || serial < wkMon || serial > wkSun) continue;
+        const ch  = r[cCh]  != null ? String(r[cCh]).trim()  : '(Unknown)';
+        const lob = r[cLob] != null ? String(r[cLob]).trim() : '';
+        if (!lob) continue;
+        if (!wkChannels[ch]) wkChannels[ch] = { fcv:0, rcv:0, hndl:0, sta:0, base:0, aht_n:0, aht_d:0, sch:0, schNz:0, hc_n:0 };
+        const d = wkChannels[ch];
+        const fc_v = r[cFcV]  || 0;
+        const rcv  = r[cRcv]  || 0;
+        const hndl = r[cHndl] || 0;
+        const ht   = r[cHT]   || 0;
+        const sch  = r[cSch]  || 0;
+        d.fcv += fc_v; d.rcv += rcv; d.hndl += hndl;
+        d.sta  += r[cSTA]  || 0; d.base += r[cBase] || 0;
+        if (hndl > 0 && ht > 0) { d.aht_n += ht; d.aht_d += hndl; }
+        d.sch += sch; if (sch > 0) d.schNz++;
+        const ahtVal = d.aht_d > 0 ? d.aht_n / d.aht_d / 86400 : null;
+        if (fc_v > 0 && ahtVal != null) d.hc_n += hcReq(fc_v, ahtVal, chanConc(ch)) || 0;
+      }
+      const wkLbl = weekLabel(wkMon);
+      for (const [ch, d] of Object.entries(wkChannels).sort((a,b) => a[0].localeCompare(b[0]))) {
+        const sl   = d.base > 0   ? Math.min(d.sta / d.base * 100, 100) : null;
+        const fcvp = d.fcv  > 0   ? d.rcv / d.fcv * 100 : null;
+        const aht  = d.aht_d > 0  ? d.aht_n / d.aht_d / 86400 : null;
+        const sch  = d.schNz > 0  ? Math.round(d.sch) : null;
+        const hc   = d.aht_d > 0  ? Math.ceil(d.fcv * (d.aht_n / d.aht_d / 86400) * 86400 / 1800 / chanConc(ch)) : null;
+        const ou   = (sch != null && hc != null) ? sch - hc : null;
+        const slCls = colorSL(sl);
+        const fcvCls = fcvp == null ? '' : fcvp >= 95 ? 'green' : fcvp >= 85 ? 'yellow' : 'red';
+        const status = sl == null ? '—' : sl >= 80 ? '🟢 On Track' : sl >= 70 ? '🟡 At Risk' : '🔴 Off Target';
+        const tr = document.createElement('tr');
+        tr.className = 'lob-row';
+        tr.innerHTML =
+          `<td style="font-weight:600;color:#0097a7;">${wkLbl}</td>` +
+          `<td style="font-weight:700;">${ch}</td>` +
+          `<td>${d.fcv > 0 ? Math.round(d.fcv).toLocaleString() : '—'}</td>` +
+          cell(fcvp != null ? fcvp.toFixed(1)+'%' : '—', fcvCls) +
+          cell(sl   != null ? sl.toFixed(1)+'%'   : '—', slCls) +
+          `<td>${fSecs(aht)}</td>` +
+          `<td>${sch != null ? sch : '—'}</td>` +
+          `<td>${hc  != null ? hc  : '—'}</td>` +
+          (ou != null ? `<td style="color:${ou>=0?'#155724':'#8b1a1a'};font-weight:600;">${ou>0?'+':''}${ou}</td>` : '<td>—</td>') +
+          `<td>${status}</td>`;
+        wowBody.appendChild(tr);
+      }
+    }
+  } else {
+    wowWrap.style.display  = 'none';
+    wowTitle.style.display = 'none';
   }
 }
 
