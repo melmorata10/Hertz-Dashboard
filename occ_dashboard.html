@@ -1068,6 +1068,11 @@ function rebuildSlicerOptsFromCache() {
       document.getElementById('add-files-btn').style.display = 'inline-block';
       document.getElementById('sp-btn').style.display = 'inline-block';
       document.getElementById('copy-btn').style.display = 'none';
+    } else {
+      // View-only — hide everything except Copy link
+      document.getElementById('add-files-btn').style.display = 'none';
+      document.getElementById('sp-btn').style.display = 'none';
+      document.getElementById('copy-view-btn').style.display = 'none';
     }
     statusEl.textContent = viewOnly ? '✓ View-only' : '✓ Loaded from shared link';
     // Show the share panel with current URL so it can be re-shared
