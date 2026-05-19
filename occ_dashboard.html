@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>OCC IDP Dashboard</title>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+<script src="https://js.live.net/v7.2/OneDrive.js"></script>
 <style>
 /* ── Reset & base ───────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -397,6 +398,51 @@ tr.lob-row td:first-child { padding-left: 22px; color: #1a3a50; }
 #weekly-trend-body tr.wt-week-repeat td:first-child { text-align: left; }
 #weekly-trend-body tr.wt-lob td { background: #fff; color: #1a2a38; }
 #weekly-trend-body tr.wt-lob:nth-child(even) td { background: #f7fbfd; }
+
+/* ── SharePoint picker button ───────────────────────────────────────── */
+#sp-btn {
+  background: transparent;
+  color: #7ecfee;
+  border: 1.5px solid rgba(126,207,238,0.5);
+  border-radius: 8px;
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s;
+}
+#sp-btn:hover { background: rgba(126,207,238,0.1); border-color: #7ecfee; }
+
+/* ── SharePoint config modal ────────────────────────────────────────── */
+#sp-modal-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,0.55); z-index: 2000;
+  align-items: center; justify-content: center;
+}
+#sp-modal-overlay.open { display: flex; }
+#sp-modal {
+  background: #fff; border-radius: 14px; padding: 32px 28px;
+  max-width: 500px; width: 92%; box-shadow: 0 12px 40px rgba(0,0,0,0.25);
+}
+#sp-modal h3 { margin: 0 0 6px; color: #0a3a55; font-size: 17px; }
+#sp-modal .sp-sub { color: #667; font-size: 12px; margin: 0 0 20px; line-height: 1.5; }
+#sp-modal label { display: block; font-size: 11px; font-weight: 700; color: #0a3a55; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.04em; }
+#sp-modal input[type=text] { width: 100%; box-sizing: border-box; padding: 9px 12px; border: 1.5px solid #cdd; border-radius: 7px; font-size: 13px; margin-bottom: 14px; outline: none; transition: border 0.15s; }
+#sp-modal input[type=text]:focus { border-color: #00bcd4; }
+#sp-modal .sp-note { font-size: 11px; color: #888; background: #f5f9fc; border-left: 3px solid #00bcd4; padding: 10px 12px; border-radius: 0 6px 6px 0; margin-bottom: 20px; line-height: 1.6; }
+#sp-modal .sp-btns { display: flex; gap: 10px; justify-content: flex-end; align-items: center; }
+#sp-modal .sp-reset { font-size: 11px; color: #aaa; cursor: pointer; margin-right: auto; text-decoration: underline; }
+#sp-modal .sp-reset:hover { color: #e74c3c; }
+#sp-modal .sp-cancel { padding: 8px 16px; border: 1.5px solid #cdd; background: #fff; border-radius: 7px; cursor: pointer; font-size: 13px; }
+#sp-modal .sp-save { padding: 8px 22px; background: linear-gradient(135deg,#00bcd4,#0097a7); color: #fff; border: none; border-radius: 7px; cursor: pointer; font-weight: 700; font-size: 13px; }
+#sp-modal .sp-save:hover { opacity: 0.9; }
+
+/* Drop-zone SharePoint link */
+#drop-zone .sp-link {
+  display: inline-block; margin-top: 12px;
+  font-size: 12px; color: #00bcd4; cursor: pointer; text-decoration: underline;
+}
 </style>
 </head>
 <body>
@@ -411,6 +457,7 @@ tr.lob-row td:first-child { padding-left: 22px; color: #1a3a50; }
     <div id="week-badge"></div>
     <input type="file" id="add-file-input" accept=".xlsb,.xlsx,.xlsm" multiple>
     <button id="add-files-btn" onclick="document.getElementById('add-file-input').click()">＋ Add files</button>
+    <button id="sp-btn" onclick="launchSharePointPicker()">☁ From SharePoint</button>
     <div id="upload-btn-wrap">
       <input type="file" id="file-input" accept=".xlsb,.xlsx,.xlsm" multiple>
       <button id="upload-btn" onclick="document.getElementById('file-input').click()">⬆ Upload files</button>
@@ -432,6 +479,7 @@ tr.lob-row td:first-child { padding-left: 22px; color: #1a3a50; }
     <div class="icon">📂</div>
     <h2>Drop your OCC IDP Report here</h2>
     <p>Or click to browse · Accepts <strong>.xlsb</strong> files · Multiple files supported</p>
+    <span class="sp-link" onclick="event.stopPropagation(); launchSharePointPicker()">☁ Import from SharePoint instead</span>
   </div>
 
   <!-- Dashboard -->
@@ -2144,9 +2192,6 @@ function renderWeeklyTrend(filterCh, filterVd, filterBr, filterLb) {
       lobHdrTd.style.color = '#0a3a55';
       lobHdrTd.setAttribute('colspan', weekSerials.length + 1);
 
-      // Week-label repeat row under LOB sub-header
-      appendWeekRepeatRow();
-
       // LOB metric rows
       appendMetricRows(lob, ch, true);
     }
@@ -2158,6 +2203,82 @@ function renderWeeklyTrend(filterCh, filterVd, filterBr, filterLb) {
   container.appendChild(wrapper);
 }
 
+// ── SharePoint / OneDrive Picker ──────────────────────────────────────────────
+function launchSharePointPicker() {
+  const clientId  = localStorage.getItem('sp_client_id');
+  const tenantUrl = localStorage.getItem('sp_tenant_url') || '';
+  if (!clientId) { showSpModal(); return; }
+  openOneDrivePicker(clientId, tenantUrl);
+}
+
+function showSpModal() {
+  document.getElementById('sp-client-id').value   = localStorage.getItem('sp_client_id')  || '';
+  document.getElementById('sp-tenant-url').value  = localStorage.getItem('sp_tenant_url') || '';
+  document.getElementById('sp-modal-overlay').classList.add('open');
+}
+function closeSpModal() {
+  document.getElementById('sp-modal-overlay').classList.remove('open');
+}
+function clearSpConfig() {
+  localStorage.removeItem('sp_client_id');
+  localStorage.removeItem('sp_tenant_url');
+  document.getElementById('sp-client-id').value  = '';
+  document.getElementById('sp-tenant-url').value = '';
+}
+function saveSpConfig() {
+  const clientId  = document.getElementById('sp-client-id').value.trim();
+  const tenantUrl = document.getElementById('sp-tenant-url').value.trim();
+  if (!clientId) { alert('Azure AD Client ID is required.'); return; }
+  localStorage.setItem('sp_client_id', clientId);
+  if (tenantUrl) localStorage.setItem('sp_tenant_url', tenantUrl);
+  closeSpModal();
+  openOneDrivePicker(clientId, tenantUrl);
+}
+
+function openOneDrivePicker(clientId, tenantUrl) {
+  const advanced = { filter: '.xlsb,.xlsx,.xlsm', queryParameters: 'select=id,name,size,file,@microsoft.graph.downloadUrl' };
+  if (tenantUrl) advanced.endpointHint = tenantUrl;
+
+  const pickerOptions = {
+    clientId,
+    action: 'download',
+    multiSelect: true,
+    advanced,
+    success: async function(response) {
+      const status = document.getElementById('upload-status');
+      status.textContent = '⏳ Downloading from SharePoint…';
+      try {
+        const files = await Promise.all((response.value || []).map(async f => {
+          const url = f['@microsoft.graph.downloadUrl'];
+          const res = await fetch(url);
+          if (!res.ok) throw new Error(`Failed to download "${f.name}"`);
+          const blob = await res.blob();
+          return new File([blob], f.name, { type: blob.type });
+        }));
+        // Use loadFiles if dashboard not yet loaded, addFiles if adding to existing data
+        if (!cfFcastCache) loadFiles(files);
+        else addFiles(files);
+      } catch (e) {
+        document.getElementById('upload-status').textContent = '✗ ' + e.message;
+        console.error(e);
+      }
+    },
+    cancel: function() {},
+    error: function(e) {
+      const msg = (e && e.message) ? e.message : JSON.stringify(e);
+      document.getElementById('upload-status').textContent = '✗ Picker error — check Client ID or permissions.';
+      console.error('OneDrive picker error:', msg);
+    }
+  };
+
+  try {
+    OneDrive.open(pickerOptions);
+  } catch(e) {
+    alert('OneDrive picker could not be launched. The OneDrive.js SDK may be blocked. Try whitelisting js.live.net in your network/firewall.');
+    console.error(e);
+  }
+}
+
 // ── Tab switching ─────────────────────────────────────────────────────────────
 function switchTab(name) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -2166,5 +2287,30 @@ function switchTab(name) {
   event.currentTarget.classList.add('active');
 }
 </script>
+
+<!-- ── SharePoint Config Modal ───────────────────────────────────────── -->
+<div id="sp-modal-overlay">
+  <div id="sp-modal">
+    <h3>☁ Connect to SharePoint</h3>
+    <p class="sp-sub">A one-time setup using your organization's Azure AD Client ID. Ask your IT admin if you don't have one.</p>
+
+    <label>Azure AD Client ID *</label>
+    <input type="text" id="sp-client-id" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+
+    <label>SharePoint Site URL (optional)</label>
+    <input type="text" id="sp-tenant-url" placeholder="https://yourcompany.sharepoint.com">
+
+    <div class="sp-note">
+      <strong>IT Admin setup:</strong> Register an app in Azure AD → Authentication → add this dashboard URL as a Redirect URI → API Permissions: <em>Files.Read, Files.Read.All, Sites.Read.All</em> (Microsoft Graph, delegated).
+    </div>
+
+    <div class="sp-btns">
+      <span class="sp-reset" onclick="clearSpConfig()">Clear saved credentials</span>
+      <button class="sp-cancel" onclick="closeSpModal()">Cancel</button>
+      <button class="sp-save" onclick="saveSpConfig()">Save &amp; Open Picker</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
