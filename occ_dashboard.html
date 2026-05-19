@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>OCC IDP Dashboard</title>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
 <style>
 /* ── Reset & base ───────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -941,12 +942,20 @@ function addFiles(files) {
 // ── Cloud persistence helpers ─────────────────────────────────────────────────
 async function compressData(obj) {
   const json = JSON.stringify(obj);
-  const stream = new Blob([json]).stream().pipeThrough(new CompressionStream('gzip'));
-  return new Uint8Array(await new Response(stream).arrayBuffer());
+  if (typeof CompressionStream !== 'undefined') {
+    const stream = new Blob([json]).stream().pipeThrough(new CompressionStream('gzip'));
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+  }
+  // Fallback for Safari < 16.4
+  return pako.gzip(json);
 }
 async function decompressData(bytes) {
-  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
-  return JSON.parse(await new Response(stream).text());
+  if (typeof DecompressionStream !== 'undefined') {
+    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+    return JSON.parse(await new Response(stream).text());
+  }
+  // Fallback for Safari < 16.4
+  return JSON.parse(pako.inflate(bytes, { to: 'string' }));
 }
 function extractColMap(cache) {
   const map = {};
