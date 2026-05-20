@@ -895,12 +895,19 @@ def _display_summary(df: pd.DataFrame, table_key: str = "main"):
     lobs = df[df["LOB"] != "Grand Total"].sort_values("NCO", ascending=False)
     df   = pd.concat([lobs, gt], ignore_index=True)
 
-    # Always use auto-generated Analysis as the stable base — data_editor stores
-    # user edits as diffs on top of this base, so they persist across reruns as
-    # long as the base data doesn't change (no manual skey pre-fill that would
-    # cause data_editor to see "new" data and drop the diff state).
+    # Persistent comment store — survives new file uploads, cleared only by Clear button
+    if "lob_comments" not in st.session_state:
+        st.session_state["lob_comments"] = {}
+
     df = df.copy()
-    df["Analysis"] = df.apply(_abn_driver_brief, axis=1)
+    # Populate Analysis: use saved comment if present, else auto-generate
+    df["Analysis"] = df.apply(
+        lambda row: st.session_state["lob_comments"].get(
+            f"{table_key}:{row.get('LOB', '')}",
+            _abn_driver_brief(row)
+        ),
+        axis=1,
+    )
 
     present = [c for c in display_cols if c in df.columns]
     view    = df[present].copy()
@@ -939,7 +946,7 @@ def _display_summary(df: pd.DataFrame, table_key: str = "main"):
     disabled_cols = [c for c in present if c != "Analysis"]
     _row_h = 36
     _tbl_h = (len(view) + 1) * _row_h + 4
-    st.data_editor(
+    result = st.data_editor(
         styled,
         column_config=col_cfg,
         disabled=disabled_cols,
@@ -949,6 +956,13 @@ def _display_summary(df: pd.DataFrame, table_key: str = "main"):
         key=f"editor_{table_key}",
         num_rows="fixed",
     )
+
+    # Save any edits back to the persistent comment store
+    if result is not None and "LOB" in result.columns and "Analysis" in result.columns:
+        for _, row in result.iterrows():
+            lob = str(row.get("LOB", ""))
+            if lob:
+                st.session_state["lob_comments"][f"{table_key}:{lob}"] = str(row.get("Analysis", ""))
 
 
 def _merge_editor_edits(df: pd.DataFrame, table_key: str) -> pd.DataFrame:
@@ -1444,6 +1458,7 @@ with st.sidebar:
             if st.button("🗑️ Clear Data", use_container_width=True):
                 st.session_state.pop("stored_files", None)
                 st.session_state.pop("sp_raw", None)
+                st.session_state.pop("lob_comments", None)
                 st.rerun()
         st.caption("Columns: SkillName, SupplierName, Interval, NCO, NCH, AHT, ABN, ASA")
 
