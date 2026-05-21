@@ -1004,6 +1004,25 @@ def _display_summary(df: pd.DataFrame, table_key: str = "main"):
     if "lob_comments" not in st.session_state:
         st.session_state["lob_comments"] = {}
 
+    # ── Capture any pending edits BEFORE re-rendering ─────────────────────────
+    # Streamlit's data_editor stores the delta (edited_rows) in session state
+    # keyed by the widget key. We flush those deltas into lob_comments NOW,
+    # using the LOB order recorded on the previous render.  This prevents edits
+    # from being lost when the Styler object changes between reruns.
+    _order_key  = f"lob_order_{table_key}"
+    _prev_lobs  = st.session_state.get(_order_key, [])
+    _widget_state = st.session_state.get(f"editor_{table_key}", {})
+    for _idx_str, _changes in _widget_state.get("edited_rows", {}).items():
+        if "Analysis" in _changes:
+            try:
+                _idx = int(_idx_str)
+                if 0 <= _idx < len(_prev_lobs):
+                    _lob = _prev_lobs[_idx]
+                    if _lob:
+                        st.session_state["lob_comments"][f"{table_key}:{_lob}"] = str(_changes["Analysis"])
+            except (ValueError, TypeError):
+                pass
+
     df = df.copy()
     # Populate Analysis: use saved comment if present, else auto-generate
     df["Analysis"] = df.apply(
@@ -1016,6 +1035,10 @@ def _display_summary(df: pd.DataFrame, table_key: str = "main"):
 
     present = [c for c in display_cols if c in df.columns]
     view    = df[present].copy()
+
+    # Record the LOB order used this render so the next render can map
+    # edited_rows indices back to LOB names
+    st.session_state[_order_key] = list(view["LOB"])
 
     # Apply colours first (needs numeric values), then format display strings
     styled = _style_summary(view)
@@ -1062,12 +1085,15 @@ def _display_summary(df: pd.DataFrame, table_key: str = "main"):
         num_rows="fixed",
     )
 
-    # Save any edits back to the persistent comment store
+    # Secondary save: iterate the full result as a fallback (covers the case
+    # where edits arrive via result but not via edited_rows delta)
     if result is not None and "LOB" in result.columns and "Analysis" in result.columns:
         for _, row in result.iterrows():
             lob = str(row.get("LOB", ""))
-            if lob:
-                st.session_state["lob_comments"][f"{table_key}:{lob}"] = str(row.get("Analysis", ""))
+            # Only persist non-empty values so we don't overwrite a comment with ""
+            val = str(row.get("Analysis", "")).strip()
+            if lob and val:
+                st.session_state["lob_comments"][f"{table_key}:{lob}"] = val
 
 
 def _merge_editor_edits(df: pd.DataFrame, table_key: str) -> pd.DataFrame:
