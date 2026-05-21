@@ -127,7 +127,8 @@ def prepare(raw: pd.DataFrame, custom_mapping: dict = None) -> tuple[pd.DataFram
         "ABN", "Target ABN%", "ABN%", "Target ASA", "ASA",
     ]
     if raw.empty:
-        return pd.DataFrame(columns=_EMPTY_COLS), pd.DataFrame(columns=_EMPTY_COLS)
+        empty = pd.DataFrame(columns=_EMPTY_COLS)
+        return empty, {}, empty
 
     # 1. Normalise column names
     df = _normalise_columns(raw)
