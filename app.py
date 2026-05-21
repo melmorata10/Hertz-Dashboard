@@ -7,6 +7,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from src.data_processor import prepare
+from src.mapping import SKILL_TO_LOB as _BUILTIN_MAPPING, LOB_DISPLAY_ORDER as _LOB_ORDER
 
 # SharePoint connector (optional — only used when source toggle = SharePoint)
 try:
@@ -833,6 +834,110 @@ def _summary_to_html_table(df: pd.DataFrame) -> str:
     )
 
 
+# ── Mapping Manager helpers ────────────────────────────────────────────────────
+_VENDOR_OPTIONS = ["TELUS", "VXI", "IGT", "HERTZ", "Other"]
+_LOB_OPTIONS    = list(_LOB_ORDER) + ["Unknown"]
+
+
+def _mapping_to_df(mapping_dict: dict) -> pd.DataFrame:
+    """Convert a SKILL_TO_LOB-style dict to a display DataFrame."""
+    rows = []
+    for skill_key, entry in mapping_dict.items():
+        parts = skill_key.split(": ", 1)
+        skill_id   = parts[0].strip() if len(parts) == 2 else ""
+        queue_name = parts[1].strip() if len(parts) == 2 else skill_key
+        rows.append({
+            "Skill ID":   skill_id,
+            "Queue Name": queue_name,
+            "LOB":        entry.get("lob",    ""),
+            "Vendor":     entry.get("vendor", ""),
+        })
+    return pd.DataFrame(rows, columns=["Skill ID", "Queue Name", "LOB", "Vendor"])
+
+
+def _df_to_mapping(df: pd.DataFrame) -> dict:
+    """Convert the editable DataFrame back to a SKILL_TO_LOB-compatible dict."""
+    mapping = {}
+    for _, row in df.iterrows():
+        skill_id   = str(row.get("Skill ID",   "")).strip()
+        queue_name = str(row.get("Queue Name", "")).strip()
+        lob        = str(row.get("LOB",        "")).strip()
+        vendor     = str(row.get("Vendor",     "")).strip()
+        if not queue_name or queue_name.lower() in ("nan", "none", ""):
+            continue
+        key = f"{skill_id}: {queue_name}" if skill_id else queue_name
+        mapping[key] = {"lob": lob, "vendor": vendor}
+    return mapping
+
+
+def _get_mapping_df() -> pd.DataFrame:
+    """Return the working mapping DataFrame from session state,
+    seeding from the built-in mapping on first use."""
+    if "mapping_df" not in st.session_state:
+        st.session_state["mapping_df"] = _mapping_to_df(_BUILTIN_MAPPING)
+    return st.session_state["mapping_df"]
+
+
+def _import_from_tableau(file, current_df: pd.DataFrame) -> pd.DataFrame:
+    """Parse a Tableau Excel export and merge into current_df.
+
+    • Existing rows (matched by Skill ID) keep their LOB; Vendor is updated from the file.
+    • New skills are appended with a blank LOB so the team can fill them in.
+    • Returns the merged DataFrame.
+    """
+    raw = pd.read_excel(file)
+    raw.columns = [str(c).strip() for c in raw.columns]
+
+    # Resolve skill-key column
+    for cand in ("Skill Name and Number", "Skill Name and Number (H)", "SkillName"):
+        if cand in raw.columns:
+            skill_col = cand
+            break
+    else:
+        raise ValueError(f"No skill column found. Columns: {list(raw.columns)}")
+
+    vendor_col = next((c for c in ("SupplierName", "Supplier Name", "Vendor") if c in raw.columns), None)
+    id_col     = next((c for c in ("ExternalSkillID", "CustomSkillID") if c in raw.columns), None)
+
+    # Deduplicate: one row per unique skill key
+    seen_keys: set = set()
+    new_rows = []
+    for _, row in raw.iterrows():
+        skill_key = str(row.get(skill_col, "")).strip()
+        if not skill_key or skill_key.lower() in ("nan", "none") or skill_key in seen_keys:
+            continue
+        seen_keys.add(skill_key)
+
+        parts      = skill_key.split(": ", 1)
+        skill_id   = str(row.get(id_col, parts[0].strip() if len(parts) == 2 else "")).strip() if id_col else (parts[0].strip() if len(parts) == 2 else "")
+        queue_name = parts[1].strip() if len(parts) == 2 else skill_key
+        vendor     = str(row.get(vendor_col, "")).strip() if vendor_col else ""
+        new_rows.append({"Skill ID": skill_id, "Queue Name": queue_name, "_vendor_import": vendor})
+
+    imported = pd.DataFrame(new_rows) if new_rows else pd.DataFrame(
+        columns=["Skill ID", "Queue Name", "_vendor_import"])
+
+    # Build a lookup from the current editable table: Skill ID → (LOB, Vendor)
+    existing_lookup = {}
+    for _, r in current_df.iterrows():
+        sid = str(r.get("Skill ID", "")).strip()
+        if sid:
+            existing_lookup[sid] = (str(r.get("LOB", "")), str(r.get("Vendor", "")))
+
+    merged_rows = []
+    for _, r in imported.iterrows():
+        sid = str(r["Skill ID"]).strip()
+        existing_lob, existing_vendor = existing_lookup.get(sid, ("", ""))
+        merged_rows.append({
+            "Skill ID":   sid,
+            "Queue Name": str(r["Queue Name"]).strip(),
+            "LOB":        existing_lob,                          # preserve existing LOB
+            "Vendor":     str(r["_vendor_import"]).strip() or existing_vendor,
+        })
+
+    return pd.DataFrame(merged_rows, columns=["Skill ID", "Queue Name", "LOB", "Vendor"])
+
+
 _COL_WIDTHS = {
     "LOB":         160,
     "NCO":          80,
@@ -1504,7 +1609,8 @@ if data_source == "📁 Upload CSV":
                     call_date = pd.to_datetime(raw["CallDate"], errors="coerce").max().strftime("%m/%d/%Y")
                 except Exception:
                     call_date = None
-            summary_df, vendor_summaries, interval_df = prepare(raw)
+            _active_mapping = st.session_state.get("custom_mapping")  # None → use built-in
+            summary_df, vendor_summaries, interval_df = prepare(raw, custom_mapping=_active_mapping)
             data_ok = True
         else:
             st.warning("No data could be read from the stored files.")
@@ -1526,7 +1632,8 @@ else:  # SharePoint
                             call_date = pd.to_datetime(raw["CallDate"], errors="coerce").max().strftime("%m/%d/%Y")
                         except Exception:
                             call_date = None
-                    summary_df, vendor_summaries, interval_df = prepare(raw)
+                    _active_mapping = st.session_state.get("custom_mapping")
+                    summary_df, vendor_summaries, interval_df = prepare(raw, custom_mapping=_active_mapping)
                     data_ok = True
                 else:
                     st.warning("No CSV files found in the configured SharePoint folder.")
@@ -1650,7 +1757,11 @@ if data_ok:
         unsafe_allow_html=True,
     )
 
-tab1, tab2 = st.tabs(["📊 Voice Performance Summary", "⏱️ Per Interval"])
+tab1, tab2, tab3 = st.tabs([
+    "📊 Voice Performance Summary",
+    "⏱️ Per Interval",
+    "🗺️ Mapping Manager",
+])
 
 # ── Tab 1: Voice Performance Summary ─────────────────────────────────────────
 with tab1:
@@ -1771,3 +1882,137 @@ with tab2:
         _display_interval(interval_df, lob_sel, vendor_sel)
     elif data_ok:
         st.info("No interval data available in the loaded files.")
+
+# ── Tab 3: Mapping Manager ────────────────────────────────────────────────────
+with tab3:
+    st.subheader("Skill → LOB Mapping")
+    st.caption(
+        "Edit the mapping below to control how each skill queue is assigned to a Line of Business "
+        "and Vendor. Click **💾 Apply** to make it the active mapping for all report calculations. "
+        "Click **↩️ Reset** to revert to the built-in defaults."
+    )
+
+    # ── Status banner ─────────────────────────────────────────────────────────
+    _custom = st.session_state.get("custom_mapping")
+    if _custom:
+        n = len(_custom)
+        st.success(f"✅ **Custom mapping active** — {n:,} skill entries in use")
+    else:
+        n = len(_BUILTIN_MAPPING)
+        st.info(f"ℹ️ **Built-in mapping active** — {n:,} skill entries")
+
+    st.markdown("---")
+
+    # ── Import from Tableau Excel ─────────────────────────────────────────────
+    with st.expander("📥 Import / update from Tableau Excel", expanded=False):
+        st.markdown(
+            "Upload the **Skill Name and ID from Tableau.xlsx** file to add or update entries. "
+            "Existing LOB assignments are preserved — only new skills are added (with a blank LOB "
+            "you can fill in below). Vendor is updated from the file."
+        )
+        xl_upload = st.file_uploader(
+            "Upload Tableau mapping Excel",
+            type=["xlsx", "xls"],
+            key="mapping_xl_upload",
+            label_visibility="collapsed",
+        )
+        if xl_upload:
+            try:
+                current = _get_mapping_df()
+                merged  = _import_from_tableau(xl_upload, current)
+                st.session_state["mapping_df"] = merged
+                blank_lob = (merged["LOB"] == "").sum()
+                st.success(
+                    f"✅ Imported {len(merged):,} unique skills. "
+                    + (f"**{blank_lob} new skills** have a blank LOB — fill them in below and click Apply." if blank_lob else "All LOBs are mapped.")
+                )
+                st.rerun()
+            except Exception as _err:
+                st.error(f"Could not import: {_err}")
+
+    st.markdown("---")
+
+    # ── Editable mapping table ─────────────────────────────────────────────────
+    _mdf = _get_mapping_df()
+
+    _map_col_cfg = {
+        "Skill ID": st.column_config.TextColumn(
+            "Skill ID",
+            width=120,
+            help="Numeric skill ID (e.g. 20687271). Used to build the lookup key.",
+        ),
+        "Queue Name": st.column_config.TextColumn(
+            "Queue Name",
+            width=310,
+            help="Skill/queue name (e.g. US_Hertz_VXI_Roadside_TNC).",
+        ),
+        "LOB": st.column_config.SelectboxColumn(
+            "LOB",
+            options=_LOB_OPTIONS,
+            width=160,
+            help="Line of Business this skill maps to.",
+        ),
+        "Vendor": st.column_config.SelectboxColumn(
+            "Vendor",
+            options=_VENDOR_OPTIONS,
+            width=110,
+            help="Vendor / Supplier handling this skill.",
+        ),
+    }
+
+    _map_h = min(600, max(300, len(_mdf) * 36 + 40))
+
+    st.caption(
+        f"**{len(_mdf):,} entries** · "
+        "Double-click any cell to edit · "
+        "Use the ➕ row at the bottom to add new entries · "
+        "Click **💾 Apply** when done"
+    )
+
+    _edited_map = st.data_editor(
+        _mdf,
+        column_config=_map_col_cfg,
+        num_rows="dynamic",        # enables ➕ add-row button at bottom
+        hide_index=True,
+        use_container_width=True,
+        height=_map_h,
+        key="mapping_data_editor",
+    )
+
+    # ── LOB coverage summary ───────────────────────────────────────────────────
+    if not _edited_map.empty:
+        _blank = (_edited_map["LOB"].isna() | (_edited_map["LOB"] == "")).sum()
+        if _blank > 0:
+            st.warning(f"⚠️ {_blank} skill(s) have no LOB assigned — they will be excluded from report calculations.")
+
+    st.markdown("---")
+
+    # ── Apply / Reset / Group-by summary ──────────────────────────────────────
+    _act_col, _rst_col, _sum_col = st.columns([2, 1, 3])
+
+    with _act_col:
+        if st.button("💾 Apply as Active Mapping", type="primary", use_container_width=True):
+            st.session_state["mapping_df"]    = _edited_map.copy()
+            st.session_state["custom_mapping"] = _df_to_mapping(_edited_map)
+            _n = len(st.session_state["custom_mapping"])
+            st.success(f"✅ Mapping applied — {_n:,} entries active. Re-upload your data file to see updated results.")
+            st.rerun()
+
+    with _rst_col:
+        if st.button("↩️ Reset to Built-in", use_container_width=True):
+            st.session_state.pop("mapping_df",     None)
+            st.session_state.pop("custom_mapping", None)
+            st.rerun()
+
+    with _sum_col:
+        # Quick breakdown: # skills per LOB
+        if not _edited_map.empty:
+            _grp = (
+                _edited_map.groupby("LOB", dropna=False)
+                .size()
+                .reset_index(name="# Skills")
+                .sort_values("# Skills", ascending=False)
+                .reset_index(drop=True)
+            )
+            st.caption("**Skills per LOB (current edits)**")
+            st.dataframe(_grp, hide_index=True, use_container_width=True, height=180)

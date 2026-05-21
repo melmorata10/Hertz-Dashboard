@@ -57,15 +57,25 @@ def _normalise_columns(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _enrich(df: pd.DataFrame) -> pd.DataFrame:
-    """Resolve SkillName → LOB and Vendor via the static mapping table."""
+def _enrich(df: pd.DataFrame, mapping: dict = None) -> pd.DataFrame:
+    """Resolve SkillName → LOB and Vendor via the mapping table.
+
+    Parameters
+    ----------
+    mapping : dict | None
+        Custom mapping dict ``{skill_name: {"lob": ..., "vendor": ...}}``.
+        When *None* (default) the built-in ``SKILL_TO_LOB`` from mapping.py is used.
+    """
+    if mapping is None:
+        mapping = SKILL_TO_LOB
+
     def _lookup(row):
         skill = str(row.get("SkillName", ""))
         fallback_vendor = (
             str(row.get("SupplierName", ""))
             if pd.notna(row.get("SupplierName")) else "Unknown"
         )
-        entry = SKILL_TO_LOB.get(skill, {})
+        entry = mapping.get(skill, {})
         return entry.get("lob", "Unknown"), entry.get("vendor", fallback_vendor)
 
     results = df.apply(_lookup, axis=1, result_type="expand")
@@ -105,7 +115,7 @@ def _derive_metrics(agg: pd.DataFrame, lob_col: str = "LOB") -> pd.DataFrame:
     return df.drop(columns=["AHT_w", "ASA_w"])
 
 
-def prepare(raw: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+def prepare(raw: pd.DataFrame, custom_mapping: dict = None) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Returns (summary_df, interval_df).
 
@@ -143,7 +153,7 @@ def prepare(raw: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
         df["Interval30"] = pd.NaT
 
     # 4. Enrich with LOB / Vendor via skill mapping
-    df = _enrich(df)
+    df = _enrich(df, mapping=custom_mapping)
     df = df[df["LOB"].notna() & (df["LOB"] != "") & (df["LOB"] != "Unknown")]
 
     if df.empty:
