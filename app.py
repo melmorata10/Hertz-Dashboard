@@ -8,6 +8,11 @@ import streamlit.components.v1 as components
 
 from src.data_processor import prepare
 from src.mapping import SKILL_TO_LOB as _BUILTIN_MAPPING, LOB_DISPLAY_ORDER as _LOB_ORDER
+from src.persistence import (
+    load_comments, save_comments, clear_comments,
+    load_custom_mapping, save_custom_mapping,
+    load_mapping_df, save_mapping_df, clear_custom_mapping,
+)
 
 # SharePoint connector (optional — only used when source toggle = SharePoint)
 try:
@@ -22,6 +27,23 @@ st.set_page_config(
     page_icon="🚗",
     layout="wide",
 )
+
+# ── Load shared server-side state on first visit ──────────────────────────────
+# session_state is per-browser; disk files are shared across ALL users.
+# We seed session_state from disk once per session so every RTA sees the
+# mapping and comments saved by whoever last updated them.
+if "lob_comments" not in st.session_state:
+    st.session_state["lob_comments"] = load_comments()
+
+if "custom_mapping" not in st.session_state:
+    _persisted_mapping = load_custom_mapping()
+    if _persisted_mapping is not None:
+        st.session_state["custom_mapping"] = _persisted_mapping
+
+if "mapping_df" not in st.session_state:
+    _persisted_df = load_mapping_df()
+    if _persisted_df is not None:
+        st.session_state["mapping_df"] = _persisted_df
 
 # Move sidebar logo above nav links + rename "app" nav label
 components.html("""
@@ -1012,6 +1034,7 @@ def _display_summary(df: pd.DataFrame, table_key: str = "main"):
     _order_key  = f"lob_order_{table_key}"
     _prev_lobs  = st.session_state.get(_order_key, [])
     _widget_state = st.session_state.get(f"editor_{table_key}", {})
+    _comments_changed = False
     for _idx_str, _changes in _widget_state.get("edited_rows", {}).items():
         if "Analysis" in _changes:
             try:
@@ -1020,8 +1043,11 @@ def _display_summary(df: pd.DataFrame, table_key: str = "main"):
                     _lob = _prev_lobs[_idx]
                     if _lob:
                         st.session_state["lob_comments"][f"{table_key}:{_lob}"] = str(_changes["Analysis"])
+                        _comments_changed = True
             except (ValueError, TypeError):
                 pass
+    if _comments_changed:
+        save_comments(st.session_state["lob_comments"])
 
     df = df.copy()
     # Populate Analysis: use saved comment if present, else auto-generate
@@ -1088,12 +1114,18 @@ def _display_summary(df: pd.DataFrame, table_key: str = "main"):
     # Secondary save: iterate the full result as a fallback (covers the case
     # where edits arrive via result but not via edited_rows delta)
     if result is not None and "LOB" in result.columns and "Analysis" in result.columns:
+        _sec_changed = False
         for _, row in result.iterrows():
             lob = str(row.get("LOB", ""))
             # Only persist non-empty values so we don't overwrite a comment with ""
             val = str(row.get("Analysis", "")).strip()
             if lob and val:
-                st.session_state["lob_comments"][f"{table_key}:{lob}"] = val
+                old = st.session_state["lob_comments"].get(f"{table_key}:{lob}", "")
+                if val != old:
+                    st.session_state["lob_comments"][f"{table_key}:{lob}"] = val
+                    _sec_changed = True
+        if _sec_changed:
+            save_comments(st.session_state["lob_comments"])
 
 
 def _merge_editor_edits(df: pd.DataFrame, table_key: str) -> pd.DataFrame:
@@ -1590,6 +1622,7 @@ with st.sidebar:
                 st.session_state.pop("stored_files", None)
                 st.session_state.pop("sp_raw", None)
                 st.session_state.pop("lob_comments", None)
+                clear_comments()   # also wipe disk so other users see clean state
                 st.rerun()
         st.caption("Columns: SkillName, SupplierName, Interval, NCO, NCH, AHT, ABN, ASA")
 
@@ -1947,6 +1980,7 @@ with tab3:
                 current = _get_mapping_df()
                 merged  = _import_from_tableau(xl_upload, current)
                 st.session_state["mapping_df"] = merged
+                save_mapping_df(merged)   # persist so other users see the import
                 blank_lob = (merged["LOB"] == "").sum()
                 st.success(
                     f"✅ Imported {len(merged):,} unique skills. "
@@ -2018,16 +2052,20 @@ with tab3:
 
     with _act_col:
         if st.button("💾 Apply as Active Mapping", type="primary", use_container_width=True):
-            st.session_state["mapping_df"]    = _edited_map.copy()
+            st.session_state["mapping_df"]     = _edited_map.copy()
             st.session_state["custom_mapping"] = _df_to_mapping(_edited_map)
+            # ── persist to disk so ALL users instantly get the new mapping ──
+            save_custom_mapping(st.session_state["custom_mapping"])
+            save_mapping_df(_edited_map)
             _n = len(st.session_state["custom_mapping"])
-            st.success(f"✅ Mapping applied — {_n:,} entries active. Re-upload your data file to see updated results.")
+            st.success(f"✅ Mapping applied — {_n:,} entries active for all users.")
             st.rerun()
 
     with _rst_col:
         if st.button("↩️ Reset to Built-in", use_container_width=True):
             st.session_state.pop("mapping_df",     None)
             st.session_state.pop("custom_mapping", None)
+            clear_custom_mapping()   # wipe disk too
             st.rerun()
 
     with _sum_col:

@@ -1,6 +1,9 @@
 # Secrets — never commit these
 .streamlit/secrets.toml
 
+# Runtime shared state (cross-session persistence — never commit)
+data/*.json
+
 # Python
 __pycache__/
 *.py[cod]
