@@ -19,7 +19,7 @@ supabase = get_supabase()
 # HELPERS
 # ─────────────────────────────────────────
 def hash_password(password: str) -> str:
-    return hashlib.sha1(password.encode()).hexdigest()
+    return hashlib.sha256(password.encode()).hexdigest()
 
 def login(email: str, password: str):
     hashed = hash_password(password)
