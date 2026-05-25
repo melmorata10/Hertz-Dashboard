@@ -90,6 +90,18 @@ body {
   display: none;
 }
 #add-files-btn:hover { background: rgba(126,207,238,0.1); border-color: #7ecfee; }
+#clear-btn {
+  background: transparent;
+  color: #ff8a80;
+  border: 1.5px solid rgba(255,138,128,0.4);
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+#clear-btn:hover { background: rgba(255,138,128,0.1); border-color: #ff8a80; }
 #share-panel {
   background: rgba(255,255,255,0.12);
   border: 1px solid rgba(255,255,255,0.25);
@@ -477,6 +489,7 @@ tr.lob-row td:first-child { padding-left: 22px; color: #1a3a50; }
     <input type="file" id="add-file-input" accept=".xlsb,.xlsx,.xlsm" multiple>
     <button id="add-files-btn" onclick="document.getElementById('add-file-input').click()">＋ Add files</button>
     <button id="sp-btn" onclick="launchSharePointPicker()">☁ From SharePoint</button>
+    <button id="clear-btn" onclick="clearAllData()" style="display:none;">🗑 Clear data</button>
     <div id="upload-btn-wrap">
       <input type="file" id="file-input" accept=".xlsb,.xlsx,.xlsm" multiple>
       <button id="upload-btn" onclick="document.getElementById('file-input').click()">⬆ Upload files</button>
@@ -825,7 +838,7 @@ dz.addEventListener('drop', e => {
 function loadFiles(files) {
   cfFcastCache = null;
   cfSchedCache = null;
-  try { sessionStorage.removeItem('occ_data'); sessionStorage.removeItem('occ_r'); } catch(e) {}
+  try { localStorage.removeItem('occ_data'); localStorage.removeItem('occ_r'); } catch(e) {}
   let processed = 0;
   document.getElementById('upload-status').textContent = `Reading 0/${files.length}…`;
 
@@ -851,6 +864,7 @@ function loadFiles(files) {
       document.getElementById('dashboard').style.display = 'block';
       document.getElementById('add-files-btn').style.display = 'inline-block';
       document.getElementById('sp-btn').style.display = 'inline-block';
+      document.getElementById('clear-btn').style.display = 'inline-block';
       document.getElementById('upload-status').textContent =
         `✓ ${files.length} file${files.length > 1 ? 's' : ''} loaded`;
 
@@ -1021,8 +1035,8 @@ async function saveToCloud() {
     let binary = '';
     for (let i = 0; i < compressed.length; i++) binary += String.fromCharCode(compressed[i]);
     const b64 = btoa(binary);
-    // ── Cache in sessionStorage immediately so refresh survives before cloud save completes ──
-    try { sessionStorage.setItem('occ_data', b64); } catch(e) {}
+    // ── Cache in localStorage so data persists across browser sessions ──────────
+    try { localStorage.setItem('occ_data', b64); } catch(e) {}
     const res = await fetch('/api/save', {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain' },
@@ -1033,7 +1047,7 @@ async function saveToCloud() {
     const url = new URL(location.href);
     url.searchParams.set('r', key);
     history.replaceState(null, '', url.toString());
-    try { sessionStorage.setItem('occ_r', key); } catch(e) {}
+    try { localStorage.setItem('occ_r', key); } catch(e) {}
     urlEl.value = url.toString();
     savingEl.style.display = 'none';
     panelEl.style.display  = 'flex';
@@ -1104,11 +1118,11 @@ function rebuildSlicerOptsFromCache() {
   let   key      = params.get('r');
   const viewOnly = params.get('view') === '1';
 
-  // ── No URL key — check sessionStorage for session cache ──────────────────
+  // ── No URL key — check localStorage for persisted data ──────────────────
   if (!key) {
     let cachedData = null;
     let cachedKey  = null;
-    try { cachedData = sessionStorage.getItem('occ_data'); cachedKey = sessionStorage.getItem('occ_r'); } catch(e) {}
+    try { cachedData = localStorage.getItem('occ_data'); cachedKey = localStorage.getItem('occ_r'); } catch(e) {}
     if (!cachedData) return; // nothing to restore
 
     const statusEl = document.getElementById('upload-status');
@@ -1134,6 +1148,7 @@ function rebuildSlicerOptsFromCache() {
       document.getElementById('upload-btn-wrap').style.display = 'none';
       document.getElementById('add-files-btn').style.display = 'inline-block';
       document.getElementById('sp-btn').style.display = 'inline-block';
+      document.getElementById('clear-btn').style.display = 'inline-block';
       statusEl.textContent = '✓ Session restored';
       // Restore share panel URL if cloud key is known
       if (cachedKey) {
@@ -1145,7 +1160,7 @@ function rebuildSlicerOptsFromCache() {
         if (urlEl && panelEl) { urlEl.value = url.toString(); panelEl.style.display = 'flex'; }
       }
     } catch(e) {
-      try { sessionStorage.removeItem('occ_data'); } catch(_) {}
+      try { localStorage.removeItem('occ_data'); } catch(_) {}
       document.getElementById('drop-zone').style.display = 'flex';
       console.error('Session restore failed:', e);
     }
@@ -1159,6 +1174,12 @@ function rebuildSlicerOptsFromCache() {
     const res = await fetch(`/api/load?key=${encodeURIComponent(key)}`);
     if (!res.ok) throw new Error('Report not found');
     const bytes = new Uint8Array(await res.arrayBuffer());
+    // Persist shared-link data to localStorage so it survives future refreshes
+    try {
+      let bin = ''; for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+      localStorage.setItem('occ_data', btoa(bin));
+      localStorage.setItem('occ_r', key);
+    } catch(e) {}
     const payload = await decompressData(bytes);
     if (payload.v === 2) {
       // Compact format: fcast/sched are plain arrays of compact rows
@@ -1181,6 +1202,7 @@ function rebuildSlicerOptsFromCache() {
       // Owner link — show Add files + SharePoint, hide Copy link, show View-only link
       document.getElementById('add-files-btn').style.display = 'inline-block';
       document.getElementById('sp-btn').style.display = 'inline-block';
+      document.getElementById('clear-btn').style.display = 'inline-block';
       document.getElementById('copy-btn').style.display = 'none';
     } else {
       // View-only — hide everything except Copy link
@@ -2558,6 +2580,34 @@ async function fetchFromSharePoint(flowUrl) {
     status.textContent = '✗ SharePoint fetch failed: ' + e.message;
     console.error('fetchFromSharePoint error', e);
   }
+}
+
+// ── Clear all data and return to upload screen ────────────────────────────────
+function clearAllData() {
+  if (!confirm('Clear all loaded data and return to the upload screen?')) return;
+  try { localStorage.removeItem('occ_data'); localStorage.removeItem('occ_r'); } catch(e) {}
+  cfFcastCache = null;
+  cfSchedCache = null;
+  // Strip ?r= from URL
+  const url = new URL(location.href);
+  url.searchParams.delete('r');
+  url.searchParams.delete('view');
+  history.replaceState(null, '', url.toString());
+  // Reset UI
+  document.getElementById('dashboard').style.display = 'none';
+  document.getElementById('drop-zone').style.display = 'flex';
+  document.getElementById('upload-btn-wrap').style.display = '';
+  document.getElementById('add-files-btn').style.display = 'none';
+  document.getElementById('sp-btn').style.display = '';
+  document.getElementById('clear-btn').style.display = 'none';
+  document.getElementById('share-panel').style.display = 'none';
+  document.getElementById('share-saving').style.display = 'none';
+  document.getElementById('upload-status').textContent = '';
+  document.getElementById('week-badge').style.display = 'none';
+  document.getElementById('week-badge').textContent = '';
+  // Reset file inputs
+  document.getElementById('file-input').value = '';
+  document.getElementById('add-file-input').value = '';
 }
 
 // ── Tab switching ─────────────────────────────────────────────────────────────
