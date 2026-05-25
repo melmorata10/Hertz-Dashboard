@@ -546,6 +546,7 @@ tr.lob-row td:first-child { padding-left: 22px; color: #1a3a50; }
       <button class="tab-btn" onclick="switchTab('vendor')">🏢 Per Vendor</button>
       <button class="tab-btn" onclick="switchTab('exec')">📊 Executive Summary</button>
       <button class="tab-btn" onclick="switchTab('weekly')">📅 Weekly Trend</button>
+      <button class="tab-btn" onclick="switchTab('aux')">📆 Aux Report</button>
       <button class="tab-btn" onclick="switchTab('interval')">⏱ Interval Summary</button>
     </div>
 
@@ -651,6 +652,11 @@ tr.lob-row td:first-child { padding-left: 22px; color: #1a3a50; }
     <!-- Tab: Weekly Trend -->
     <div id="tab-weekly" class="tab-panel">
       <div id="weekly-trend-body"></div>
+    </div>
+
+    <!-- Tab: Aux Report -->
+    <div id="tab-aux" class="tab-panel">
+      <div id="aux-report-body"></div>
     </div>
 
     <!-- Tab: Executive Summary -->
@@ -1647,6 +1653,7 @@ function applySlicers() {
   rebuildIntervalRows(wk, activeDt, ch, vd, br, lb);
   rebuildVendorRows(wk, activeDt, ch, vd, br, lb);
   renderWeeklyTrend(ch, vd, br, lb);
+  renderAuxReport(ch, vd, br, lb);
   const anyActive = ch || vd || br || lb;
 
   const tbody = document.getElementById('ent-body');
@@ -2278,6 +2285,221 @@ function renderWeeklyTrend(filterCh, filterVd, filterBr, filterLb) {
 
       // LOB metric rows
       appendMetricRows(lob, ch, true);
+    }
+  }
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'wt-section table-wrap';
+  wrapper.appendChild(table);
+  container.appendChild(wrapper);
+}
+
+// ── Aux Report Tab — Vendor > LOB rows × week columns ────────────────────────
+function renderAuxReport(filterCh, filterVd, filterBr, filterLb) {
+  const container = document.getElementById('aux-report-body');
+  container.innerHTML = '';
+  if (!cfFcastCache) return;
+
+  const weekSerials = [...slicerOpts.weeks.keys()].sort((a, b) => a - b);
+  if (!weekSerials.length) return;
+
+  const wkLabels = weekSerials.map(s => weekLabel(s).replace('Week of ', 'Wk '));
+
+  const { rows, cLob, cCh, cDate2, cRcv, cHndl, cSTA, cBase,
+          cFcV, cFcAH, cHT, cSch, cPres, cVendor, cBrand } = cfFcastCache;
+
+  // ── Aggregate per (wkMon, vendor, lob) ───────────────────────────────────
+  // agg[wkMon][vendor][lob] = { ch, rcv, hndl, sta, base, fc_v, ht_n, ht_d, sch_sum, sch_nz, pres_sum }
+  const agg = {};
+  const vendorOrder = [];
+  const vendorLobs  = {}; // vendor → [lob, ...]
+  for (const s of weekSerials) agg[s] = {};
+
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (!r) continue;
+    const serial = r[cDate2] != null ? Math.floor(r[cDate2]) : null;
+    if (!serial || serial < 1) continue;
+    const wkMon = weekMondaySerial(serial);
+    if (!agg[wkMon]) continue;
+
+    const lob = r[cLob]    != null ? String(r[cLob]).trim()    : '';
+    const ch  = r[cCh]     != null ? String(r[cCh]).trim()     : '';
+    const vd  = cVendor >= 0 && r[cVendor] != null ? String(r[cVendor]).trim() : '(No Vendor)';
+    const br  = cBrand  >= 0 && r[cBrand]  != null ? String(r[cBrand]).trim()  : '';
+    if (!lob) continue;
+    if (filterCh && ch !== filterCh) continue;
+    if (filterVd && vd !== filterVd) continue;
+    if (filterBr && br !== filterBr) continue;
+    if (filterLb && lob !== filterLb) continue;
+
+    // Track vendor → LOB order
+    if (!vendorLobs[vd]) { vendorOrder.push(vd); vendorLobs[vd] = []; }
+    if (!vendorLobs[vd].includes(lob)) vendorLobs[vd].push(lob);
+
+    if (!agg[wkMon][vd]) agg[wkMon][vd] = {};
+    if (!agg[wkMon][vd][lob]) agg[wkMon][vd][lob] = {
+      ch, rcv:0, hndl:0, sta:0, base:0, fc_v:0, ht_n:0, ht_d:0, sch_sum:0, sch_nz:0, pres_sum:0
+    };
+    const d = agg[wkMon][vd][lob];
+    const rcv  = r[cRcv]  || 0, hndl = r[cHndl] || 0;
+    const fc_v = r[cFcV]  || 0, ht   = r[cHT]   || 0;
+    const sch  = r[cSch]  || 0, pres = r[cPres]  || 0;
+    d.rcv += rcv; d.hndl += hndl;
+    d.sta  += r[cSTA]  || 0; d.base += r[cBase] || 0;
+    d.fc_v += fc_v;
+    if (hndl > 0 && ht > 0) { d.ht_n += ht; d.ht_d += hndl; }
+    d.sch_sum += sch; d.pres_sum += pres;
+    if (sch > 0) d.sch_nz++;
+  }
+
+  // Adherence per (wk, lob) from cfSchedCache
+  const adhAgg = {};
+  if (cfSchedCache) {
+    const { rows: sRows, cLob: scLob, cAdhS, cAdhM, cDate } = cfSchedCache;
+    for (let i = 1; i < sRows.length; i++) {
+      const r = sRows[i]; if (!r) continue;
+      const serial = r[cDate] != null ? Math.floor(r[cDate]) : null;
+      if (!serial || serial < 1) continue;
+      const wkMon = weekMondaySerial(serial);
+      if (!agg[wkMon]) continue;
+      const lob = r[scLob] != null ? String(r[scLob]).trim() : '';
+      if (!lob) continue;
+      if (!adhAgg[wkMon]) adhAgg[wkMon] = {};
+      if (!adhAgg[wkMon][lob]) adhAgg[wkMon][lob] = { s: 0, m: 0 };
+      adhAgg[wkMon][lob].s += r[cAdhS] || 0;
+      adhAgg[wkMon][lob].m += r[cAdhM] || 0;
+    }
+  }
+
+  if (!vendorOrder.length) return;
+
+  // ── Metric definitions (same as Weekly Trend) ─────────────────────────────
+  const metrics = [
+    { label: 'SL %',
+      lobVal: (d)      => d.base>0 ? Math.min(d.sta/d.base*100,100) : null,
+      vdAgg:  (lobs)   => { let s=0,b=0; for(const d of lobs){s+=d.sta;b+=d.base;} return b>0?Math.min(s/b*100,100):null; },
+      fmt: v => v.toFixed(1)+'%', cls: v => colorSL(v) },
+    { label: 'Received Vol',
+      lobVal: (d)      => d.rcv>0 ? d.rcv : null,
+      vdAgg:  (lobs)   => { let s=0; for(const d of lobs)s+=d.rcv; return s>0?s:null; },
+      fmt: v => Math.round(v).toLocaleString(), cls: ()=>'' },
+    { label: 'Handled Vol',
+      lobVal: (d)      => d.hndl>0 ? d.hndl : null,
+      vdAgg:  (lobs)   => { let s=0; for(const d of lobs)s+=d.hndl; return s>0?s:null; },
+      fmt: v => Math.round(v).toLocaleString(), cls: ()=>'' },
+    { label: 'FCV %',
+      lobVal: (d)      => d.fc_v>0 ? d.rcv/d.fc_v*100 : null,
+      vdAgg:  (lobs)   => { let r=0,f=0; for(const d of lobs){r+=d.rcv;f+=d.fc_v;} return f>0?r/f*100:null; },
+      fmt: v => v.toFixed(1)+'%', cls: v => colorFCV(v) },
+    { label: 'AHT w/ ACW',
+      lobVal: (d)      => d.ht_d>0 ? d.ht_n/d.ht_d/86400 : null,
+      vdAgg:  (lobs)   => { let n=0,dd=0; for(const d of lobs){n+=d.ht_n;dd+=d.ht_d;} return dd>0?n/dd/86400:null; },
+      fmt: v => fSecs(v), cls: ()=>'' },
+    { label: 'Attendance %',
+      lobVal: (d)      => d.sch_sum>0 ? (1-(d.sch_sum-d.pres_sum)/d.sch_sum)*100 : null,
+      vdAgg:  (lobs)   => { let s=0,p=0; for(const d of lobs){s+=d.sch_sum;p+=d.pres_sum;} return s>0?(1-(s-p)/s)*100:null; },
+      fmt: v => v.toFixed(1)+'%', cls: v => v>=95?'green':v>=90?'yellow':'red' },
+    { label: 'ADH %',
+      lobVal: (d,wk,l) => { const a=(adhAgg[wk]||{})[l]; return a&&a.s>0?a.m/a.s*100:null; },
+      vdAgg:  (lobs,wk,ls) => { let s=0,m=0; for(const l of ls){const a=(adhAgg[wk]||{})[l];if(a){s+=a.s;m+=a.m;}} return s>0?m/s*100:null; },
+      fmt: v => v.toFixed(1)+'%', cls: v => colorAdh(v) },
+    { label: 'Schedule HC',
+      lobVal: (d)      => d.sch_nz>0 ? Math.round(d.sch_sum/d.sch_nz) : null,
+      vdAgg:  (lobs)   => { let s=0,n=0; for(const d of lobs){s+=d.sch_sum;n+=d.sch_nz;} return n>0?Math.round(s/n):null; },
+      fmt: v => String(v), cls: ()=>'' },
+    { label: 'Base HC Req',
+      lobVal: (d)      => { const aht=d.ht_d>0?d.ht_n/d.ht_d/86400:null; return (aht&&d.fc_v>0&&d.sch_nz>0)?hcReq(d.fc_v/d.sch_nz,aht,chanConc(d.ch)):null; },
+      vdAgg:  (lobs)   => { let s=0,c=0; for(const d of lobs){const aht=d.ht_d>0?d.ht_n/d.ht_d/86400:null;const hc2=(aht&&d.fc_v>0&&d.sch_nz>0)?hcReq(d.fc_v/d.sch_nz,aht,chanConc(d.ch)):null;if(hc2!=null){s+=hc2;c++;}} return c>0?s:null; },
+      fmt: v => String(Math.round(v)), cls: ()=>'' },
+    { label: 'Overs / Unders',
+      lobVal: (d)      => { const sc=d.sch_nz>0?Math.round(d.sch_sum/d.sch_nz):null; const aht=d.ht_d>0?d.ht_n/d.ht_d/86400:null; const hc2=(aht&&d.fc_v>0&&d.sch_nz>0)?hcReq(d.fc_v/d.sch_nz,aht,chanConc(d.ch)):null; return (sc!=null&&hc2!=null)?sc-hc2:null; },
+      vdAgg:  (lobs)   => { let scS=0,scN=0,hcS=0,hcC=0; for(const d of lobs){scS+=d.sch_sum;scN+=d.sch_nz;const aht=d.ht_d>0?d.ht_n/d.ht_d/86400:null;const hc2=(aht&&d.fc_v>0&&d.sch_nz>0)?hcReq(d.fc_v/d.sch_nz,aht,chanConc(d.ch)):null;if(hc2!=null){hcS+=hc2;hcC++;}} const sc=scN>0?Math.round(scS/scN):null; return (sc!=null&&hcC>0)?sc-hcS:null; },
+      fmt: v => (v>0?'+':'')+Math.round(v),
+      cls: v => v>=0?'green':'red',
+      ouStyle: true }
+  ];
+
+  // ── Build table ───────────────────────────────────────────────────────────
+  const table = document.createElement('table');
+  const thead = table.createTHead();
+  const hrow  = thead.insertRow();
+  const thName = document.createElement('th');
+  thName.textContent = 'Vendor / LOB / Metric';
+  thName.style.cssText = 'text-align:left;min-width:240px;';
+  hrow.appendChild(thName);
+  for (const lbl of wkLabels) {
+    const th = document.createElement('th');
+    th.textContent = lbl;
+    hrow.appendChild(th);
+  }
+
+  const tbody = table.createTBody();
+
+  function appendAuxMetricRows(vd, lobKey, isLob) {
+    for (const m of metrics) {
+      const row = tbody.insertRow();
+      row.className = 'wt-lob';
+      const nameTd = row.insertCell();
+      nameTd.textContent = m.label;
+      nameTd.style.paddingLeft = isLob ? '48px' : '28px';
+      nameTd.style.color = '#5a7a90';
+      nameTd.style.fontSize = '11px';
+
+      for (const wkMon of weekSerials) {
+        const td = row.insertCell();
+        let v;
+        if (lobKey) {
+          const d = (agg[wkMon][vd] || {})[lobKey];
+          v = d ? m.lobVal(d, wkMon, lobKey) : null;
+        } else {
+          const lobsInVd = Object.values(agg[wkMon][vd] || {});
+          const lobNames = Object.keys(agg[wkMon][vd] || {});
+          v = m.vdAgg(lobsInVd, wkMon, lobNames);
+        }
+        if (v == null) { td.textContent = '—'; continue; }
+        td.textContent = m.fmt(v);
+        const cls = m.cls(v);
+        if (cls) td.className = cls;
+        if (m.ouStyle) { td.style.color = v>=0?'#155724':'#8b1a1a'; td.style.fontWeight = '600'; }
+      }
+    }
+  }
+
+  for (const vd of vendorOrder.sort((a,b)=>a.localeCompare(b))) {
+    const lobs = vendorLobs[vd] || [];
+
+    // Vendor header row
+    const vdRow = tbody.insertRow();
+    vdRow.className = 'wt-channel';
+    const vdTd = vdRow.insertCell();
+    vdTd.textContent = vd;
+    for (const lbl of wkLabels) {
+      const td = vdRow.insertCell();
+      td.textContent = lbl;
+      td.style.cssText = 'text-align:center;font-size:10px;font-weight:700;letter-spacing:.04em;opacity:.85;';
+    }
+
+    // Vendor aggregate metric rows
+    if (!filterLb) appendAuxMetricRows(vd, null, false);
+
+    // Individual LOB blocks
+    for (const lob of lobs.sort((a,b)=>a.localeCompare(b))) {
+      // LOB sub-header
+      const lobHdr = tbody.insertRow();
+      lobHdr.className = 'wt-channel';
+      lobHdr.style.background = '#e8f4f8';
+      const lobHdrTd = lobHdr.insertCell();
+      lobHdrTd.textContent = lob;
+      lobHdrTd.style.cssText = 'padding-left:22px;font-size:12px;color:#0a3a55;';
+      for (const lbl of wkLabels) {
+        const td = lobHdr.insertCell();
+        td.textContent = lbl;
+        td.style.cssText = 'text-align:center;font-size:10px;font-weight:700;color:#4a7a9b;letter-spacing:.04em;opacity:.85;';
+      }
+
+      // LOB metric rows
+      appendAuxMetricRows(vd, lob, true);
     }
   }
 
