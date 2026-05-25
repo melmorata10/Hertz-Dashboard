@@ -1072,6 +1072,14 @@ def main():
         if role in ["admin", "super_admin"]:
             nav_options += ["📋 Review Queue", "👥 User Management"]
 
+        st.markdown("""
+        <style>
+        section[data-testid="stSidebar"] .stRadio > label,
+        section[data-testid="stSidebar"] .stRadio > div > label:first-child {
+            display: none !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
         page = st.radio("Navigation", nav_options, label_visibility="collapsed")
 
         st.markdown("---")
