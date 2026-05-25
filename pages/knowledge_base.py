@@ -315,6 +315,15 @@ h4 { color: #1a3a5c !important; font-weight: 700 !important;
      border-left: 3px solid #FFD700; padding-left: 12px; }
 .stCaption { color: #8099b8 !important; font-size: 12px !important; }
 
+/* ── Hide radio label in sidebar ─────────────────────────────────── */
+section[data-testid='stSidebar'] .stRadio > label,
+section[data-testid='stSidebar'] [data-testid='stWidgetLabel'] {
+    display: none !important;
+    height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
 /* ── Search result cards ──────────────────────────────────────────── */
 .search-result-card {
     background: white;
@@ -572,37 +581,19 @@ def page_login():
 
 
 def render_header(title: str, subtitle: str = ""):
-    subtitle_html = f"<div style='font-size:13px;color:rgba(255,255,255,0.55);margin-top:4px;'>{subtitle}</div>" if subtitle else ""
-    st.markdown(f"""
-    <div style="background:linear-gradient(-50deg,#040d1a,#0a1628,#193860,#1d4675,#112244,#040d1a);
-                background-size:350% 350%;animation:hdrGradient 10s ease infinite;
-                padding:22px 36px;border-radius:16px;margin-bottom:24px;
-                border-bottom:3px solid #FFD700;
-                box-shadow:0 8px 36px rgba(6,16,34,0.38);
-                display:flex;align-items:center;justify-content:space-between;
-                position:relative;overflow:hidden;">
-        <div style="position:absolute;top:0;left:-55%;width:40%;height:100%;
-                    background:linear-gradient(90deg,transparent,rgba(255,215,0,0.06),transparent);
-                    animation:hdrBeam 7s ease-in-out infinite;pointer-events:none;"></div>
-        <div>
-            <div style="font-size:10px;color:#FFD700;font-weight:800;
-                        letter-spacing:2.8px;text-transform:uppercase;margin-bottom:5px;">
-                Hertz &nbsp;·&nbsp; Powered by Callinsite
-            </div>
-            <div style="font-size:27px;font-weight:900;color:white;line-height:1.1;">
-                {title}
-            </div>
-            {subtitle_html}
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;background:rgba(255,215,0,0.12);
-                    border:1px solid rgba(255,215,0,0.35);border-radius:10px;padding:7px 16px;
-                    font-size:12px;color:#FFD700;font-weight:700;letter-spacing:1px;">
-            <div style="width:8px;height:8px;border-radius:50%;background:#4ade80;
-                        animation:livePulse 2s ease-in-out infinite;"></div>
-            LIVE
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    sub = f"<p style='font-size:13px;color:rgba(255,255,255,0.55);margin:4px 0 0 0;'>{subtitle}</p>" if subtitle else ""
+    html = (
+        "<div style='background:#0a1628;padding:22px 36px;border-radius:16px;"
+        "margin-bottom:24px;border-bottom:3px solid #FFD700;"
+        "box-shadow:0 8px 36px rgba(6,16,34,0.38);'>"
+        "<p style='font-size:10px;color:#FFD700;font-weight:800;"
+        "letter-spacing:2.8px;text-transform:uppercase;margin:0 0 6px 0;'>"
+        "HERTZ &middot; POWERED BY CALLINSITE</p>"
+        f"<p style='font-size:26px;font-weight:900;color:white;margin:0;line-height:1.2;'>{title}</p>"
+        f"{sub}"
+        "</div>"
+    )
+    st.markdown(html, unsafe_allow_html=True)
 
 
 def render_doc_detail(doc: dict):
