@@ -14,9 +14,12 @@ from src.persistence import (
     load_mapping_df, save_mapping_df, clear_custom_mapping,
 )
 
-# SharePoint connector (optional — only used when source toggle = SharePoint)
+# SharePoint connector
 try:
+    from src.sharepoint import acquire_token as _sp_acquire_token
+    from src.sharepoint import get_valid_token as _sp_get_valid_token
     from src.sharepoint import load_all_csvs as _sp_load
+    from src.sharepoint import HOSTNAME as _SP_HOSTNAME
     _SP_AVAILABLE = True
 except ImportError:
     _SP_AVAILABLE = False
@@ -1627,22 +1630,53 @@ with st.sidebar:
         st.caption("Columns: SkillName, SupplierName, Interval, NCO, NCH, AHT, ABN, ASA")
 
     else:  # SharePoint
-        st.markdown("**Load from SharePoint**")
-        _sp_secrets_ok = "sharepoint" in st.secrets if hasattr(st, "secrets") else False
-        if not _sp_secrets_ok:
-            st.warning(
-                "SharePoint credentials not configured.\n\n"
-                "Add a `[sharepoint]` section to your Streamlit secrets with:\n"
-                "`tenant_id`, `client_id`, `client_secret`, `site_hostname`, "
-                "`site_path`, `folder_path`",
-                icon="⚠️",
-            )
-        else:
+        st.markdown(f"**Connect to SharePoint**")
+        st.caption(f"📂 `{_SP_HOSTNAME}/sites/HertzWFM`")
+
+        _token_info = st.session_state.get("sp_token_info")
+        _logged_in  = _token_info and _sp_get_valid_token() is not None
+
+        if _logged_in:
+            # ── Already authenticated ──────────────────────────────────────
+            st.success(f"✅ Signed in as **{_token_info['username']}**")
             sp_load_clicked = st.button(
-                "🔄 Load / Refresh from SharePoint",
+                "🔄 Load / Refresh Data",
                 use_container_width=True,
+                key="sp_load_btn",
             )
-            st.caption("Data is cached for 5 minutes. Click to force refresh.")
+            if st.button("🔓 Sign Out", use_container_width=True, key="sp_signout_btn"):
+                st.session_state.pop("sp_token_info", None)
+                st.session_state.pop("sp_raw",        None)
+                st.rerun()
+        else:
+            # ── Login form ─────────────────────────────────────────────────
+            st.markdown("Sign in with your Microsoft 365 account:")
+            _sp_user = st.text_input(
+                "Email", key="sp_username",
+                placeholder="you@callinsite.com",
+                label_visibility="collapsed",
+            )
+            _sp_pass = st.text_input(
+                "Password", key="sp_password",
+                type="password",
+                placeholder="Password",
+                label_visibility="collapsed",
+            )
+            if st.button("🔐 Connect to SharePoint", use_container_width=True, key="sp_login_btn"):
+                if not _sp_user or not _sp_pass:
+                    st.error("Enter your email and password.")
+                else:
+                    with st.spinner("Signing in…"):
+                        try:
+                            _tok = _sp_acquire_token(_sp_user.strip(), _sp_pass)
+                            st.session_state["sp_token_info"] = _tok
+                            st.rerun()
+                        except Exception as _e:
+                            st.error(str(_e))
+            st.caption(
+                "⚠️ Your account must not have MFA enforced, "
+                "or use an **App Password** instead of your regular password."
+            )
 
 # ── Load & process ────────────────────────────────────────────────────────────
 summary_df = pd.DataFrame()
@@ -1677,31 +1711,46 @@ if data_source == "📁 Upload CSV":
         st.info("⬆️ Upload your CSV files from the sidebar to load the dashboard.")
 
 else:  # SharePoint
-    _sp_secrets_ok = "sharepoint" in st.secrets if hasattr(st, "secrets") else False
-    if _sp_secrets_ok:
-        if sp_load_clicked or "sp_raw" in st.session_state:
-            try:
-                if sp_load_clicked:
-                    _sp_load.clear()   # bust the @st.cache_data cache on manual refresh
-                raw = _sp_load()
-                st.session_state["sp_raw"] = True  # mark that we have data
-                if not raw.empty:
-                    if "CallDate" in raw.columns:
-                        try:
-                            call_date = pd.to_datetime(raw["CallDate"], errors="coerce").max().strftime("%m/%d/%Y")
-                        except Exception:
-                            call_date = None
-                    _active_mapping = st.session_state.get("custom_mapping")
-                    summary_df, vendor_summaries, interval_df = prepare(raw, custom_mapping=_active_mapping)
-                    data_ok = True
-                else:
-                    st.warning("No CSV files found in the configured SharePoint folder.")
-            except Exception as exc:
-                st.error(f"SharePoint error: {exc}")
+    _cur_token = _sp_get_valid_token()
+    if _cur_token:
+        # Load on button click OR re-use previously loaded data stored in session
+        if sp_load_clicked:
+            st.session_state.pop("sp_raw_df", None)   # force fresh pull
+
+        if "sp_raw_df" not in st.session_state:
+            if sp_load_clicked or st.session_state.get("sp_auto_load"):
+                try:
+                    with st.spinner("Loading CSVs from SharePoint…"):
+                        _raw_sp = _sp_load(_cur_token)
+                    st.session_state["sp_raw_df"]   = _raw_sp
+                    st.session_state["sp_auto_load"] = True
+                except Exception as _exc:
+                    st.error(f"SharePoint error: {_exc}")
+
+        _raw_sp = st.session_state.get("sp_raw_df")
+        if _raw_sp is not None and not _raw_sp.empty:
+            if "CallDate" in _raw_sp.columns:
+                try:
+                    call_date = (
+                        pd.to_datetime(_raw_sp["CallDate"], errors="coerce")
+                        .max().strftime("%m/%d/%Y")
+                    )
+                except Exception:
+                    call_date = None
+            _active_mapping = st.session_state.get("custom_mapping")
+            summary_df, vendor_summaries, interval_df = prepare(
+                _raw_sp, custom_mapping=_active_mapping
+            )
+            data_ok = True
+        elif _raw_sp is not None:
+            st.warning("No CSV files found in the SharePoint folder.")
         else:
-            st.info("☁️ Click **Load / Refresh from SharePoint** in the sidebar to fetch data.")
+            st.info("☁️ Click **🔄 Load / Refresh Data** in the sidebar to fetch data.")
+    elif st.session_state.get("sp_token_info"):
+        # Token expired
+        st.warning("⏱️ SharePoint session expired — please sign in again in the sidebar.")
     else:
-        st.info("☁️ Configure SharePoint credentials in Streamlit secrets to use this source.")
+        st.info("☁️ Sign in to SharePoint using the sidebar to load data.")
 
 # ── Sidebar — export buttons & notes (only when data is ready) ───────────────
 if data_ok and not summary_df.empty:
