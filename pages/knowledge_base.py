@@ -572,39 +572,18 @@ def page_login():
 
 
 def render_header(title: str, subtitle: str = ""):
+    subtitle_html = f"<div style='font-size:13px;color:rgba(255,255,255,0.55);margin-top:4px;'>{subtitle}</div>" if subtitle else ""
     st.markdown(f"""
-    <style>
-    .kb-hdr-wrap {{
-        background: linear-gradient(-50deg, #040d1a, #0a1628, #193860, #1d4675, #112244, #040d1a);
-        background-size: 350% 350%;
-        animation: hdrGradient 10s ease infinite;
-        padding: 22px 36px; border-radius: 16px; margin-bottom: 24px;
-        border-bottom: 3px solid #FFD700;
-        box-shadow: 0 8px 36px rgba(6,16,34,0.38);
-        display: flex; align-items: center; justify-content: space-between;
-        position: relative; overflow: hidden;
-    }}
-    .kb-hdr-beam {{
-        position: absolute; top: 0; left: -55%;
-        width: 40%; height: 100%;
-        background: linear-gradient(90deg, transparent, rgba(255,215,0,0.06), transparent);
-        animation: hdrBeam 7s ease-in-out infinite;
-        pointer-events: none;
-    }}
-    .kb-live-badge {{
-        display: flex; align-items: center; gap: 8px;
-        background: rgba(255,215,0,0.12);
-        border: 1px solid rgba(255,215,0,0.35);
-        border-radius: 10px; padding: 7px 16px;
-        font-size: 12px; color: #FFD700; font-weight: 700; letter-spacing: 1px;
-    }}
-    .kb-live-dot {{
-        width: 8px; height: 8px; border-radius: 50%; background: #4ade80;
-        animation: livePulse 2s ease-in-out infinite;
-    }}
-    </style>
-    <div class="kb-hdr-wrap">
-        <div class="kb-hdr-beam"></div>
+    <div style="background:linear-gradient(-50deg,#040d1a,#0a1628,#193860,#1d4675,#112244,#040d1a);
+                background-size:350% 350%;animation:hdrGradient 10s ease infinite;
+                padding:22px 36px;border-radius:16px;margin-bottom:24px;
+                border-bottom:3px solid #FFD700;
+                box-shadow:0 8px 36px rgba(6,16,34,0.38);
+                display:flex;align-items:center;justify-content:space-between;
+                position:relative;overflow:hidden;">
+        <div style="position:absolute;top:0;left:-55%;width:40%;height:100%;
+                    background:linear-gradient(90deg,transparent,rgba(255,215,0,0.06),transparent);
+                    animation:hdrBeam 7s ease-in-out infinite;pointer-events:none;"></div>
         <div>
             <div style="font-size:10px;color:#FFD700;font-weight:800;
                         letter-spacing:2.8px;text-transform:uppercase;margin-bottom:5px;">
@@ -613,10 +592,13 @@ def render_header(title: str, subtitle: str = ""):
             <div style="font-size:27px;font-weight:900;color:white;line-height:1.1;">
                 {title}
             </div>
-            {"<div style='font-size:13px;color:rgba(255,255,255,0.55);margin-top:4px;'>" + subtitle + "</div>" if subtitle else ""}
+            {subtitle_html}
         </div>
-        <div class="kb-live-badge">
-            <div class="kb-live-dot"></div>
+        <div style="display:flex;align-items:center;gap:8px;background:rgba(255,215,0,0.12);
+                    border:1px solid rgba(255,215,0,0.35);border-radius:10px;padding:7px 16px;
+                    font-size:12px;color:#FFD700;font-weight:700;letter-spacing:1px;">
+            <div style="width:8px;height:8px;border-radius:50%;background:#4ade80;
+                        animation:livePulse 2s ease-in-out infinite;"></div>
             LIVE
         </div>
     </div>
