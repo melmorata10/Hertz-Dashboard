@@ -938,33 +938,51 @@ def render_recent_uploads_panel():
 
 
 def _doc_to_faq_question(doc: dict) -> str:
-    """Convert a document title into a natural FAQ question."""
-    title = doc.get("title", "")
-    # Map common patterns to question format
-    mappings = [
-        ("How to ", "How do I "),
-        ("EOD ", "How do I complete the EOD "),
-        ("Hourly Intraday", "How do I send the Hourly Intraday Report?"),
-        ("Daily Correspondence", "How do I update Daily Correspondence Performance?"),
-        ("Contact Ratio", "How do I track Contact Ratio?"),
-        ("NonPhone", "How do I update NonPhone Data?"),
-        ("Replacement Account", "How do I run the Replacement Account Report?"),
-        ("Channel Support", "What are the Channel Support & HOOP details?"),
-        ("Escalation", "How does the Escalation process work?"),
-        ("ServiceNow", "How do I create a ServiceNow ticket?"),
-        ("RingCentral", "How do I use RingCentral for allocation?"),
-        ("PC Excalibur", "How do I unlock PC Excalibur?"),
-        ("NICE IEX", "How do I use NICE IEX?"),
-        ("ASA", "How do I calculate ASA & Allocation?"),
-        ("RTA Governance", "What is the RTA Start of Shift checklist?"),
+    """Generate a unique FAQ question from the document title.
+    Uses the actual title when mappings would produce duplicates."""
+    title    = doc.get("title", "").strip()
+    title_lc = title.lower()
+
+    # Specific multi-word patterns first (most specific → least specific)
+    specific_mappings = [
+        ("hourly intraday",         "How do I complete the Hourly Intraday Report?"),
+        ("daily correspondence",    "How do I update Daily Correspondence Performance?"),
+        ("contact ratio",           "How do I track Contact Ratio?"),
+        ("nonphone",                "How do I update NonPhone Data?"),
+        ("replacement account",     "How do I run the Replacement Account Report?"),
+        ("channel support",         "What are the Channel Support & HOOP details?"),
+        ("servicenow",              "How do I create a ServiceNow ticket?"),
+        ("pc excalibur",            "How do I unlock PC Excalibur?"),
+        ("nice iex",                "How do I use NICE IEX?"),
+        ("asa",                     "How do I calculate ASA & Allocation?"),
+        ("rta governance",          "What is the RTA Start of Shift checklist?"),
+        ("eod trends",              "How do I update EOD Trends?"),
+        ("eod performance",         "How do I complete the EOD Performance Report?"),
+        ("eod ",                    "How do I complete the EOD Report?"),
     ]
-    for key, question in mappings:
-        if key.lower() in title.lower():
+
+    for key, question in specific_mappings:
+        if key in title_lc:
             return question
-    # Default: convert title to question
-    if title.lower().startswith("how"):
+
+    # For RingCentral and similar tools that may have multiple articles —
+    # use the actual title to preserve uniqueness
+    if "ringcentral" in title_lc:
+        # Strip common prefixes and return the title as a natural question
+        clean = title.replace("RingCentral —", "").replace("RingCentral -", "").strip()
+        return f"RingCentral: {clean}?" if clean else "How do I use RingCentral?"
+
+    if "escalation" in title_lc:
+        clean = title.replace("Escalation", "").replace("—","").replace("-","").strip()
+        return f"Escalation: {clean}?" if clean else "How does Escalation work?"
+
+    # Generic fallback — use actual title words as the question
+    if title_lc.startswith("how to "):
+        return title[7:].capitalize() + "?"
+    if title_lc.startswith("how do i "):
         return title + "?"
-    return f"How do I use: {title}?"
+    # Wrap the full title naturally
+    return f"{title}?"
 
 
 def page_knowledge_base():
