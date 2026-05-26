@@ -699,7 +699,7 @@ def page_login():
 
 
 def render_recent_uploads_panel():
-    """Right panel — latest submissions by submitted_at, shows submitter name."""
+    """Right panel — latest 8 submissions, shows submitter and date."""
     st.markdown(
         "<p style='font-size:10px;font-weight:800;letter-spacing:2px;"
         "color:#7a90aa;text-transform:uppercase;margin:0 0 14px 0;'>"
@@ -725,10 +725,9 @@ def render_recent_uploads_panel():
         submitted = (doc.get("submitted_at") or "")[:10] or "—"
         st.markdown(f"""
         <div style='border-left:3px solid #FFD700;padding:8px 0 8px 12px;margin-bottom:6px;'>
-            <div style='font-size:13px;font-weight:700;color:#0a1628;line-height:1.3;margin-bottom:3px;'>{doc["title"]}</div>
-            <div style='font-size:11px;color:#8099b8;margin-top:2px;'>
-                {icon} {cat_name}
-            </div>
+            <div style='font-size:13px;font-weight:700;color:#0a1628;line-height:1.3;
+                        margin-bottom:3px;'>{doc["title"]}</div>
+            <div style='font-size:11px;color:#8099b8;'>{icon} {cat_name}</div>
             <div style='font-size:11px;color:#a0aec0;margin-top:3px;'>
                 📅 {submitted} &nbsp;·&nbsp; 👤 {submitter}
             </div>
@@ -737,6 +736,36 @@ def render_recent_uploads_panel():
         if st.button("Open →", key=f"recent_{doc['id']}", use_container_width=True):
             st.session_state.kb_selected_doc = doc["id"]
             st.rerun()
+
+
+def _doc_to_faq_question(doc: dict) -> str:
+    """Convert a document title into a natural FAQ question."""
+    title = doc.get("title", "")
+    # Map common patterns to question format
+    mappings = [
+        ("How to ", "How do I "),
+        ("EOD ", "How do I complete the EOD "),
+        ("Hourly Intraday", "How do I send the Hourly Intraday Report?"),
+        ("Daily Correspondence", "How do I update Daily Correspondence Performance?"),
+        ("Contact Ratio", "How do I track Contact Ratio?"),
+        ("NonPhone", "How do I update NonPhone Data?"),
+        ("Replacement Account", "How do I run the Replacement Account Report?"),
+        ("Channel Support", "What are the Channel Support & HOOP details?"),
+        ("Escalation", "How does the Escalation process work?"),
+        ("ServiceNow", "How do I create a ServiceNow ticket?"),
+        ("RingCentral", "How do I use RingCentral for allocation?"),
+        ("PC Excalibur", "How do I unlock PC Excalibur?"),
+        ("NICE IEX", "How do I use NICE IEX?"),
+        ("ASA", "How do I calculate ASA & Allocation?"),
+        ("RTA Governance", "What is the RTA Start of Shift checklist?"),
+    ]
+    for key, question in mappings:
+        if key.lower() in title.lower():
+            return question
+    # Default: convert title to question
+    if title.lower().startswith("how"):
+        return title + "?"
+    return f"How do I use: {title}?"
 
 
 def page_knowledge_base():
@@ -749,6 +778,7 @@ def page_knowledge_base():
     if "kb_category_filter" not in st.session_state:
         st.session_state.kb_category_filter = None
 
+    # Full-width article detail view
     if st.session_state.kb_selected_doc:
         doc = get_doc_by_id(st.session_state.kb_selected_doc)
         if doc:
@@ -758,10 +788,11 @@ def page_knowledge_base():
             st.rerun()
         return
 
-    # ── Two-column layout: articles left, recent uploads right ───────────
+    # ── Two-column layout ─────────────────────────────────────────────────
     left_col, right_col = st.columns([3, 2])
 
     with left_col:
+        # Category chips
         categories = get_categories()
         if categories:
             st.markdown(
@@ -770,7 +801,8 @@ def page_knowledge_base():
                 "🗂️ Browse by Category</p>",
                 unsafe_allow_html=True
             )
-            cat_cols = st.columns(len(categories))
+            num_cats = len(categories)
+            cat_cols = st.columns(num_cats)
             for i, cat in enumerate(categories):
                 icon      = CAT_ICONS.get(cat["name"], "📄")
                 is_active = st.session_state.kb_category_filter == cat["id"]
@@ -784,6 +816,7 @@ def page_knowledge_base():
                             st.session_state.kb_search_query    = ""
                         st.rerun()
 
+        # Search bar
         def _on_search_change():
             val = st.session_state.get("_kb_search_widget", "")
             st.session_state.kb_search_query    = val
@@ -798,8 +831,10 @@ def page_knowledge_base():
         )
         search     = st.session_state.kb_search_query
         cat_filter = st.session_state.kb_category_filter
-        st.markdown("<br>", unsafe_allow_html=True)
 
+        st.markdown("<div style='margin-top:16px;'></div>", unsafe_allow_html=True)
+
+        # ── Category filter results ───────────────────────────────────────
         if cat_filter:
             cat_name = next((c["name"] for c in categories if c["id"] == cat_filter), "")
             icon     = CAT_ICONS.get(cat_name, "📄")
@@ -814,10 +849,11 @@ def page_knowledge_base():
             for doc in docs:
                 render_doc_card(doc, "cat")
 
+        # ── Keyword search results ────────────────────────────────────────
         elif search.strip() and len(search.strip()) >= 3:
             results = search_docs(search.strip())
             if not results:
-                st.info(f"No results for '{search}'. Try a different keyword.")
+                st.info(f"No results for \"{search}\". Try a different keyword.")
             else:
                 st.markdown(
                     f"<p style='font-size:13px;color:#7a90aa;margin-bottom:12px;'>"
@@ -827,22 +863,51 @@ def page_knowledge_base():
                 )
                 for doc in results:
                     render_doc_card(doc, "search")
+
+        # ── Default: FAQ cards ────────────────────────────────────────────
         else:
-            docs = get_all_approved()
-            if not docs:
+            faq_docs = get_all_approved()[:6]
+            if not faq_docs:
                 st.info("No documents published yet.")
             else:
                 st.markdown(
-                    f"<p style='font-size:13px;color:#7a90aa;margin-bottom:12px;'>"
-                    f"📋 <b>{len(docs)}</b> document{'s' if len(docs)!=1 else ''} — latest first</p>",
+                    "<p style='font-size:10px;font-weight:800;letter-spacing:2px;"
+                    "color:#7a90aa;text-transform:uppercase;margin:0 0 14px 0;'>"
+                    "💡 Frequently Asked</p>",
                     unsafe_allow_html=True
                 )
-                for doc in docs:
-                    render_doc_card(doc, "all")
+                for doc in faq_docs:
+                    cat_name = (doc.get("kb_categories") or {}).get("name", "—")
+                    icon     = CAT_ICONS.get(cat_name, "📄")
+                    question = _doc_to_faq_question(doc)
+                    st.markdown(f"""
+                    <div style='background:white;border:1px solid rgba(200,215,235,0.8);
+                                border-left:4px solid #FFD700;border-radius:10px;
+                                padding:14px 18px;margin-bottom:6px;
+                                box-shadow:0 2px 6px rgba(0,0,0,0.04);'>
+                        <div style='font-size:14px;font-weight:700;color:#0a1628;margin-bottom:5px;'>
+                            {question}
+                        </div>
+                        <div style='font-size:11px;color:#8099b8;'>
+                            <span class='category-chip'>{icon} {cat_name}</span>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    if st.button("Read answer →", key=f"faq_{doc['id']}",
+                                  use_container_width=True):
+                        st.session_state.kb_selected_doc = doc["id"]
+                        st.rerun()
+
+                st.markdown(
+                    "<p style='font-size:12px;color:#a0aec0;text-align:center;"
+                    "margin-top:8px;'>Use search or category filters to browse all articles</p>",
+                    unsafe_allow_html=True
+                )
 
     with right_col:
         with st.container(border=True):
             render_recent_uploads_panel()
+
 
 
 def page_submit_document(user):
