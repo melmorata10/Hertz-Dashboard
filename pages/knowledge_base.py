@@ -396,6 +396,84 @@ def render_doc_card(doc, btn_key_prefix):
             st.session_state.kb_selected_doc = doc["id"]
             st.rerun()
 
+def render_content(content_text: str):
+    """Render article content with clean KB-styled formatting."""
+    if not content_text:
+        st.info("No content available for this document.")
+        return
+
+    st.markdown("""
+    <style>
+    .kb-content { font-family: 'Inter', sans-serif; color: #1a2332; line-height: 1.75; }
+    .kb-content h2 {
+        font-size: 1.25rem; font-weight: 800; color: #0a1628;
+        border-bottom: 2px solid #FFD700; padding-bottom: 8px;
+        margin: 28px 0 14px 0;
+    }
+    .kb-content h3 {
+        font-size: 1.05rem; font-weight: 700; color: #1a3a5c;
+        border-left: 3px solid #FFD700; padding-left: 10px;
+        margin: 22px 0 10px 0;
+    }
+    .kb-content h4 {
+        font-size: 0.95rem; font-weight: 700; color: #2d5480;
+        margin: 18px 0 8px 0;
+    }
+    .kb-content p { margin: 8px 0; color: #1a2332; }
+    .kb-content ol {
+        padding-left: 22px; margin: 10px 0;
+        counter-reset: none;
+    }
+    .kb-content ol li {
+        margin: 6px 0; padding-left: 4px;
+        color: #1a2332; line-height: 1.65;
+    }
+    .kb-content ul { padding-left: 20px; margin: 10px 0; }
+    .kb-content ul li {
+        margin: 5px 0; color: #1a2332;
+        list-style-type: disc;
+    }
+    .kb-content strong { color: #0a1628; font-weight: 700; }
+    .kb-content em { color: #2d5480; }
+    .kb-content code {
+        background: #f0f4fa; border: 1px solid #dce6f0;
+        border-radius: 4px; padding: 2px 6px;
+        font-family: monospace; font-size: 0.88rem; color: #c7254e;
+    }
+    .kb-content blockquote {
+        border-left: 4px solid #FFD700; background: #fffdf0;
+        padding: 10px 16px; margin: 12px 0; border-radius: 0 8px 8px 0;
+        color: #5a4a00; font-style: italic;
+    }
+    .kb-content table {
+        width: 100%; border-collapse: collapse; margin: 16px 0;
+        font-size: 0.9rem;
+    }
+    .kb-content th {
+        background: #0a1628; color: #FFD700; font-weight: 700;
+        padding: 10px 14px; text-align: left; border: 1px solid #1e3a5f;
+    }
+    .kb-content td {
+        padding: 8px 14px; border: 1px solid #dce6f0;
+        background: white; color: #1a2332;
+    }
+    .kb-content tr:nth-child(even) td { background: #f7faff; }
+    .kb-content a { color: #1a6fbf; text-decoration: underline; }
+    .kb-content hr {
+        border: none; border-top: 1px solid #dce6f0; margin: 20px 0;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # Wrap in styled div and render markdown
+    st.markdown(
+        f"<div class='kb-content'>",
+        unsafe_allow_html=True
+    )
+    st.markdown(content_text)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
 def render_doc_detail(doc, user=None):
     cat_name  = (doc.get("kb_categories") or {}).get("name","—")
     icon      = CAT_ICONS.get(cat_name,"📄")
@@ -442,11 +520,13 @@ def render_doc_detail(doc, user=None):
         st.markdown("---")
 
     # Content
-    if doc.get("content"):
-        with st.container(border=True):
-            st.markdown(doc["content"])
-    else:
-        st.info("No content available for this document.")
+    st.markdown("""
+    <div style='background:white;border:1px solid rgba(200,215,235,0.8);
+                border-radius:12px;padding:28px 32px;
+                box-shadow:0 2px 12px rgba(0,0,0,0.04);'>
+    """, unsafe_allow_html=True)
+    render_content(doc.get("content",""))
+    st.markdown("</div>", unsafe_allow_html=True)
 
 def render_edit_form(doc, form_key):
     categories = get_categories()
