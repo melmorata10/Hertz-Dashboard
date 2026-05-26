@@ -237,28 +237,39 @@ section[data-testid="stSidebar"] .stMarkdown h3 {
     letter-spacing:2.2px !important; text-transform:uppercase !important;
     border-bottom:1px solid rgba(255,215,0,0.18); padding-bottom:6px; margin-bottom:10px;
 }
+/* ── Sidebar radio items — uniform size matching nav links ── */
+section[data-testid="stSidebar"] .stRadio div[role="radiogroup"] {
+    gap:4px !important;
+}
 section[data-testid="stSidebar"] .stRadio label {
     display:flex !important; align-items:center !important;
-    padding:12px 14px 12px 18px !important; border-radius:10px !important;
+    padding:0 14px 0 18px !important;
+    height:46px !important; min-height:46px !important; max-height:46px !important;
+    border-radius:10px !important;
     border:1px solid rgba(255,215,0,0.1) !important;
     background:rgba(255,255,255,0.04) !important;
     color:#ccddf8 !important; font-weight:600 !important; font-size:13.5px !important;
     cursor:pointer !important; transition:all 0.22s ease !important;
-    margin:4px 0 !important; min-height:46px !important;
-    box-sizing:border-box !important;
+    margin:0 !important; box-sizing:border-box !important;
+    line-height:1 !important; overflow:hidden !important;
+}
+section[data-testid="stSidebar"] .stRadio label > div {
+    display:flex !important; align-items:center !important;
+    height:100% !important; padding:0 !important; margin:0 !important;
+}
+section[data-testid="stSidebar"] .stRadio label p {
+    margin:0 !important; padding:0 !important; line-height:1 !important;
 }
 section[data-testid="stSidebar"] .stRadio label:hover {
     background:rgba(255,215,0,0.09) !important;
     border-color:rgba(255,215,0,0.32) !important;
     transform:translateX(5px) !important;
 }
-section[data-testid="stSidebar"] .stRadio div[role="radiogroup"] {
-    gap:0px !important;
-}
 /* Match nav links to same height */
 [data-testid="stSidebarNav"] a {
-    min-height:46px !important;
-    box-sizing:border-box !important;
+    height:46px !important; min-height:46px !important; max-height:46px !important;
+    padding:0 14px 0 18px !important;
+    box-sizing:border-box !important; align-items:center !important;
 }
 section[data-testid="stSidebar"] .stButton button {
     background:linear-gradient(135deg,#FFD700 0%,#f5c400 55%,#e8b000 100%) !important;
