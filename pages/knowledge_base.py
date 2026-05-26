@@ -351,34 +351,15 @@ h4 { color:#1a3a5c !important; font-weight:700 !important; border-left:3px solid
 .search-result-meta { font-size:12px; color:#8099b8; }
 .category-chip { display:inline-block; background:rgba(255,215,0,0.12); border:1px solid rgba(255,215,0,0.3); border-radius:20px; padding:3px 12px; font-size:11px; font-weight:700; color:#7a5c00; margin-right:6px; }
 
-/* Card-style buttons — text-left, white bg, bordered */
-section.main div[data-testid="stButton"] button[kind="secondary"] {
-    background: white !important;
-    border: 1px solid rgba(200,215,235,0.8) !important;
-    border-left: 4px solid #FFD700 !important;
-    border-radius: 10px !important;
-    padding: 14px 18px !important;
-    text-align: left !important;
-    white-space: pre-wrap !important;
-    height: auto !important;
-    line-height: 1.6 !important;
-    color: #0a1628 !important;
-    font-weight: 400 !important;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.04) !important;
-    transition: all 0.2s ease !important;
-    margin-bottom: 6px !important;
-    max-width: 560px !important;
-}
-section.main div[data-testid="stButton"] button[kind="secondary"]:hover {
-    border-left-color: #e8b000 !important;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.09) !important;
-    transform: translateX(3px) !important;
-    background: #fafcff !important;
-}
 /* Constrain main content width */
 section.main > div[data-testid="stMainBlockContainer"] > div {
     max-width: 1100px !important;
     margin: 0 auto !important;
+}
+/* Sidebar buttons stay gold */
+section[data-testid="stSidebar"] .stButton button {
+    background: linear-gradient(135deg,#FFD700 0%,#f5c400 55%,#e8b000 100%) !important;
+    color: #0a1628 !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -456,18 +437,57 @@ def render_doc_card(doc, btn_key_prefix):
     cat_name    = (doc.get("kb_categories") or {}).get("name","—")
     icon        = CAT_ICONS.get(cat_name,"📄")
     reviewed    = (doc.get("reviewed_at") or "")[:10] or "—"
-    raw_preview = (doc.get("content") or "")[:200]
+    raw_preview = (doc.get("content") or "")[:300]
     raw_preview = re.sub(r"[#]+ *", "", raw_preview)
     raw_preview = re.sub(r"[*]+([^*]+)[*]+", r"\1", raw_preview)
     raw_preview = raw_preview.replace("\n", " ").strip()
-    preview     = (raw_preview[:120] + "...") if len(raw_preview) > 120 else raw_preview
+    preview     = (raw_preview[:130] + "...") if len(raw_preview) > 130 else raw_preview
+
+    uid = f"{btn_key_prefix}_{doc['id']}"
+    st.markdown(f"""
+    <style>
+    div[data-key="{uid}"] button {{
+        background: white !important;
+        border: none !important;
+        border-bottom: 1px solid rgba(200,215,235,0.7) !important;
+        border-radius: 0 !important;
+        padding: 14px 8px 14px 16px !important;
+        text-align: left !important;
+        white-space: normal !important;
+        height: auto !important;
+        line-height: 1.5 !important;
+        color: #0a1628 !important;
+        font-weight: 400 !important;
+        box-shadow: none !important;
+        transition: background 0.15s ease !important;
+        margin: 0 !important;
+        width: 100% !important;
+        position: relative !important;
+    }}
+    div[data-key="{uid}"] button:hover {{
+        background: #f0f5ff !important;
+        border-bottom-color: #FFD700 !important;
+        box-shadow: none !important;
+        transform: none !important;
+    }}
+    div[data-key="{uid}"] button:hover::after {{
+        content: "›";
+        position: absolute;
+        right: 16px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #FFD700;
+        font-size: 20px;
+    }}
+    </style>
+    """, unsafe_allow_html=True)
 
     label = (
         f"**{doc['title']}**  \n"
         f"*{icon} {cat_name} · {reviewed}*"
         + (f"  \n{preview}" if preview else "")
     )
-    if st.button(label, key=f"{btn_key_prefix}_{doc['id']}", use_container_width=True):
+    if st.button(label, key=uid, use_container_width=True):
         st.session_state.kb_selected_doc = doc["id"]
         st.rerun()
 
@@ -698,13 +718,18 @@ def page_login():
 
 
 def render_recent_uploads_panel():
-    """Right panel — latest 8 submissions, shows submitter and date."""
-    st.markdown(
-        "<p style='font-size:10px;font-weight:800;letter-spacing:2px;"
-        "color:#7a90aa;text-transform:uppercase;margin:0 0 14px 0;'>"
-        "🕐 Recently Added</p>",
-        unsafe_allow_html=True
-    )
+    """Right panel — compact list of recently submitted docs, each row is clickable."""
+    st.markdown("""
+    <p style='font-size:10px;font-weight:800;letter-spacing:2px;
+              color:#7a90aa;text-transform:uppercase;margin:0 0 12px 0;'>
+        Recently Added
+    </p>
+    <style>
+    .recent-list-wrap { border-radius:8px; overflow:hidden; }
+    </style>
+    <div class="recent-list-wrap">
+    """, unsafe_allow_html=True)
+
     recent = (
         supabase.table("kb_documents")
         .select("id, title, submitted_at, kb_categories(name), kb_users!kb_documents_submitted_by_fkey(name)")
@@ -714,25 +739,55 @@ def render_recent_uploads_panel():
         .execute()
         .data
     )
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
     if not recent:
         st.caption("No documents yet.")
         return
-    for doc in recent:
+
+    for i, doc in enumerate(recent):
         cat_name  = (doc.get("kb_categories") or {}).get("name", "—")
         icon      = CAT_ICONS.get(cat_name, "📄")
         submitter = (doc.get("kb_users") or {}).get("name", "Unknown")
         submitted = (doc.get("submitted_at") or "")[:10] or "—"
+        is_last   = i == len(recent) - 1
+        border_b  = "none" if is_last else "1px solid rgba(200,215,235,0.6)"
+
+        uid = f"recent_{doc['id']}"
         st.markdown(f"""
-        <div style='border-left:3px solid #FFD700;padding:8px 0 8px 12px;margin-bottom:6px;'>
-            <div style='font-size:13px;font-weight:700;color:#0a1628;line-height:1.3;
-                        margin-bottom:3px;'>{doc["title"]}</div>
-            <div style='font-size:11px;color:#8099b8;'>{icon} {cat_name}</div>
-            <div style='font-size:11px;color:#a0aec0;margin-top:3px;'>
-                📅 {submitted} &nbsp;·&nbsp; 👤 {submitter}
-            </div>
-        </div>
+        <style>
+        div[data-key="{uid}"] button {{
+            background: transparent !important;
+            border: none !important;
+            border-bottom: {border_b} !important;
+            border-radius: 0 !important;
+            padding: 10px 4px !important;
+            text-align: left !important;
+            white-space: normal !important;
+            height: auto !important;
+            line-height: 1.5 !important;
+            color: #0a1628 !important;
+            font-weight: 400 !important;
+            box-shadow: none !important;
+            transition: background 0.15s !important;
+            margin: 0 !important;
+            width: 100% !important;
+        }}
+        div[data-key="{uid}"] button:hover {{
+            background: #f0f5ff !important;
+            box-shadow: none !important;
+            transform: none !important;
+        }}
+        </style>
         """, unsafe_allow_html=True)
-        if st.button(f"→ {doc['title'][:50]}", key=f"recent_{doc['id']}", use_container_width=True):
+
+        label = (
+            f"**{doc['title'][:45]}{'...' if len(doc['title'])>45 else ''}**  \n"
+            f"*{icon} {cat_name}*  \n"
+            f"{submitted} · {submitter}"
+        )
+        if st.button(label, key=uid, use_container_width=True):
             st.session_state.kb_selected_doc = doc["id"]
             st.rerun()
 
@@ -875,12 +930,50 @@ def page_knowledge_base():
                     "💡 Frequently Asked</p>",
                     unsafe_allow_html=True
                 )
-                for doc in faq_docs:
-                    cat_name = (doc.get("kb_categories") or {}).get("name", "—")
-                    icon     = CAT_ICONS.get(cat_name, "📄")
-                    question = _doc_to_faq_question(doc)
+                # Wrap FAQ in a styled container
+                st.markdown("""
+                <div style='background:white;border:1px solid rgba(200,215,235,0.8);
+                            border-radius:10px;overflow:hidden;
+                            box-shadow:0 2px 8px rgba(0,0,0,0.04);'>
+                </div>
+                """, unsafe_allow_html=True)
+                for i, doc in enumerate(faq_docs):
+                    cat_name  = (doc.get("kb_categories") or {}).get("name", "—")
+                    icon      = CAT_ICONS.get(cat_name, "📄")
+                    question  = _doc_to_faq_question(doc)
+                    is_last   = i == len(faq_docs) - 1
+                    border_b  = "none" if is_last else "1px solid rgba(200,215,235,0.6)"
+                    uid       = f"faq_{doc['id']}"
+                    st.markdown(f"""
+                    <style>
+                    div[data-key="{uid}"] button {{
+                        background: white !important;
+                        border: none !important;
+                        border-bottom: {border_b} !important;
+                        border-radius: 0 !important;
+                        padding: 14px 16px !important;
+                        text-align: left !important;
+                        white-space: normal !important;
+                        height: auto !important;
+                        line-height: 1.6 !important;
+                        color: #0a1628 !important;
+                        font-weight: 400 !important;
+                        box-shadow: none !important;
+                        transition: background 0.15s ease, border-left 0.15s ease !important;
+                        margin: 0 !important;
+                        width: 100% !important;
+                        border-left: 3px solid transparent !important;
+                    }}
+                    div[data-key="{uid}"] button:hover {{
+                        background: #f7faff !important;
+                        border-left: 3px solid #FFD700 !important;
+                        box-shadow: none !important;
+                        transform: none !important;
+                    }}
+                    </style>
+                    """, unsafe_allow_html=True)
                     label = f"**{question}**  \n*{icon} {cat_name}*"
-                    if st.button(label, key=f"faq_{doc['id']}", use_container_width=True):
+                    if st.button(label, key=uid, use_container_width=True):
                         st.session_state.kb_selected_doc = doc["id"]
                         st.rerun()
 
