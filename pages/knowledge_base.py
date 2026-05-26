@@ -1154,6 +1154,13 @@ def main():
             st.session_state.pop("kb_selected_doc",  None)
             st.rerun()
 
+    # Reset KB state when switching pages
+    if "current_page" not in st.session_state:
+        st.session_state.current_page = page
+    if st.session_state.current_page != page:
+        st.session_state.kb_selected_doc = None
+        st.session_state.current_page    = page
+
     if page == "📖 Knowledge Base":
         page_knowledge_base()
     elif page == "📤 Submit Document":
