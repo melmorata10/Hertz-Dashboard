@@ -159,207 +159,306 @@ def extract_text_from_file(file) -> str:
 def inject_css():
     st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+/* ── Fonts: DM Sans (sharp, modern) + DM Mono (technical accents) ── */
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;0,9..40,800;1,9..40,400&family=DM+Mono:wght@400;500&family=Sora:wght@700;800&display=swap');
+
+/* ── Animations ── */
 @keyframes sidebarFlow { 0%{background-position:0% 0%} 100%{background-position:0% 100%} }
 @keyframes logoPulse { 0%,100%{box-shadow:0 4px 18px rgba(255,215,0,0.45)} 50%{box-shadow:0 6px 26px rgba(255,215,0,0.65)} }
 @keyframes subtitleShift { 0%,100%{color:rgba(255,215,0,0.65)} 50%{color:rgba(255,215,0,0.95)} }
-@keyframes fadeSlideIn { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
-@keyframes particleDrift { 0%{background-position:0 0} 100%{background-position:48px 48px} }
+@keyframes fadeUp {
+    from { opacity:0; transform:translateY(20px); }
+    to   { opacity:1; transform:translateY(0); }
+}
+@keyframes shimmer {
+    0%   { background-position: -200% center; }
+    100% { background-position: 200% center; }
+}
 @keyframes livePulse { 0%,100%{box-shadow:0 0 0 0 rgba(74,222,128,0.55)} 50%{box-shadow:0 0 0 5px rgba(74,222,128,0)} }
+@keyframes rowSlide {
+    from { opacity:0; transform:translateX(-8px); }
+    to   { opacity:1; transform:translateX(0); }
+}
 
+/* ── Base — warm off-white with subtle texture ── */
 html, body, .stApp {
-    font-family: 'Inter', sans-serif !important;
-    background: linear-gradient(135deg,#e6ecf5 0%,#eef2f8 50%,#e3edf6 100%) !important;
+    font-family: 'DM Sans', sans-serif !important;
+    background: #f5f3ef !important;
 }
+/* Subtle linen-like texture overlay */
 .stApp::before {
-    content:''; position:fixed; inset:0;
-    background-image:radial-gradient(circle,rgba(26,58,92,0.055) 1px,transparent 1px);
-    background-size:28px 28px; animation:particleDrift 18s linear infinite;
-    pointer-events:none; z-index:0;
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+        repeating-linear-gradient(
+            0deg,
+            transparent,
+            transparent 2px,
+            rgba(180,170,150,0.035) 2px,
+            rgba(180,170,150,0.035) 3px
+        );
+    pointer-events: none; z-index: 0;
 }
+/* ── Sidebar ── */
 section[data-testid="stSidebar"] {
-    background:linear-gradient(180deg,#040c18 0%,#07111f 15%,#0a1628 35%,#112244 60%,#0f2d4a 80%,#07111f 100%) !important;
-    background-size:100% 300% !important;
-    animation:sidebarFlow 14s ease-in-out infinite alternate !important;
-    border-right:2px solid rgba(255,215,0,0.45) !important;
-    box-shadow:4px 0 36px rgba(0,0,0,0.5) !important;
+    background: linear-gradient(180deg, #06101e 0%, #091624 40%, #0d1e30 70%, #06101e 100%) !important;
+    background-size: 100% 300% !important;
+    animation: sidebarFlow 18s ease-in-out infinite alternate !important;
+    border-right: 1px solid rgba(255,215,0,0.25) !important;
+    box-shadow: 2px 0 24px rgba(0,0,0,0.4) !important;
 }
-[data-testid="stSidebarNav"] { padding:2px 10px 14px !important; }
+[data-testid="stSidebarNav"] { padding: 2px 12px 14px !important; }
 [data-testid="stSidebarNav"]::before {
-    content:"NAVIGATION"; display:block;
-    font-size:9.5px; font-weight:800; letter-spacing:2.5px;
-    color:rgba(255,215,0,0.55); padding:10px 6px 8px;
-    text-transform:uppercase;
+    content: "NAVIGATION"; display: block;
+    font-family: 'DM Mono', monospace;
+    font-size: 9px; font-weight: 500; letter-spacing: 3px;
+    color: rgba(255,215,0,0.4); padding: 12px 6px 10px;
+    text-transform: uppercase;
 }
 [data-testid="stSidebarNav"] a {
-    display:flex !important; align-items:center !important;
-    margin:4px 0 !important; padding:12px 14px 12px 18px !important;
-    border-radius:10px !important; border:1px solid rgba(255,215,0,0.1) !important;
-    background:rgba(255,255,255,0.04) !important; text-decoration:none !important;
-    transition:all 0.22s ease !important; position:relative !important; overflow:hidden !important;
-}
-[data-testid="stSidebarNav"] a::before {
-    content:''; position:absolute; left:0; top:15%; bottom:15%;
-    width:3px; border-radius:0 3px 3px 0; background:rgba(255,215,0,0.25);
+    display: flex !important; align-items: center !important;
+    margin: 3px 0 !important; padding: 11px 14px 11px 16px !important;
+    border-radius: 6px !important;
+    border: 1px solid transparent !important;
+    background: transparent !important;
+    text-decoration: none !important;
+    transition: all 0.18s ease !important;
+    position: relative !important;
 }
 [data-testid="stSidebarNav"] a:hover {
-    background:rgba(255,215,0,0.09) !important;
-    border-color:rgba(255,215,0,0.32) !important;
-    transform:translateX(5px) !important;
+    background: rgba(255,215,0,0.07) !important;
+    border-color: rgba(255,215,0,0.2) !important;
+    transform: translateX(4px) !important;
 }
-[data-testid="stSidebarNav"] a:hover::before { background:#FFD700; }
 [data-testid="stSidebarNav"] a[aria-current="page"] {
-    background:linear-gradient(90deg,rgba(255,215,0,0.13),rgba(255,215,0,0.06)) !important;
-    border-color:rgba(255,215,0,0.42) !important;
+    background: rgba(255,215,0,0.1) !important;
+    border-color: rgba(255,215,0,0.3) !important;
 }
-[data-testid="stSidebarNav"] a[aria-current="page"]::before { background:#FFD700; }
 [data-testid="stSidebarNav"] a li,
 [data-testid="stSidebarNav"] a span,
 [data-testid="stSidebarNav"] ul li span {
-    color:#ccddf8 !important; font-weight:600 !important; font-size:13.5px !important;
+    color: #b8cfe8 !important; font-weight: 500 !important;
+    font-size: 13px !important; letter-spacing: 0.1px !important;
+    font-family: 'DM Sans', sans-serif !important;
 }
 [data-testid="stSidebarNav"] a[aria-current="page"] span {
-    color:#FFD700 !important; text-shadow:0 0 14px rgba(255,215,0,0.45) !important;
+    color: #FFD700 !important;
 }
 [data-testid="stSidebarNav"] a[href*="Verint"],
 [data-testid="stSidebarNav"] a[href*="verint"],
 [data-testid="stSidebarNav"] a[href*="2_Verint"],
-[data-testid="stSidebarNav"] a[href*="_2_Verint"] { display:none !important; }
+[data-testid="stSidebarNav"] a[href*="_2_Verint"] { display: none !important; }
 
 section[data-testid="stSidebar"] label,
 section[data-testid="stSidebar"] p,
 section[data-testid="stSidebar"] span,
 section[data-testid="stSidebar"] div,
-section[data-testid="stSidebar"] small { color:#c0d4ee !important; }
-section[data-testid="stSidebar"] hr { border-color:rgba(255,255,255,0.06) !important; }
-section[data-testid="stSidebar"] .stMarkdown h3 {
-    color:#FFD700 !important; font-size:10px !important; font-weight:800 !important;
-    letter-spacing:2.2px !important; text-transform:uppercase !important;
-    border-bottom:1px solid rgba(255,215,0,0.18); padding-bottom:6px; margin-bottom:10px;
+section[data-testid="stSidebar"] small { color: #9bb5cf !important; }
+section[data-testid="stSidebar"] hr {
+    border: none !important; height: 1px !important;
+    background: rgba(255,255,255,0.06) !important; margin: 12px 0 !important;
 }
-/* ── Sidebar radio items — hide radio dot, full width, uniform height ── */
+
+/* ── Sidebar Radio — clean pill style ── */
 section[data-testid="stSidebar"] .stRadio div[role="radiogroup"] {
-    gap:4px !important;
-    width:100% !important;
+    gap: 3px !important; width: 100% !important;
 }
-/* Hide the yellow radio circle entirely */
-section[data-testid="stSidebar"] .stRadio input[type="radio"] { display:none !important; }
-section[data-testid="stSidebar"] .stRadio label > div:first-child {
-    display:none !important;
-}
+section[data-testid="stSidebar"] .stRadio input[type="radio"] { display: none !important; }
+section[data-testid="stSidebar"] .stRadio label > div:first-child { display: none !important; }
 section[data-testid="stSidebar"] .stRadio label {
-    display:flex !important; align-items:center !important;
-    padding:0 14px 0 18px !important;
-    height:46px !important; min-height:46px !important; max-height:46px !important;
-    width:100% !important;
-    border-radius:10px !important;
-    border:1px solid rgba(255,215,0,0.1) !important;
-    background:rgba(255,255,255,0.04) !important;
-    color:#ccddf8 !important; font-weight:600 !important; font-size:13.5px !important;
-    cursor:pointer !important; transition:all 0.22s ease !important;
-    margin:0 !important; box-sizing:border-box !important;
-    line-height:1 !important; overflow:hidden !important;
-    position:relative !important;
+    display: flex !important; align-items: center !important;
+    padding: 0 14px 0 16px !important;
+    height: 44px !important; min-height: 44px !important; max-height: 44px !important;
+    width: 100% !important; border-radius: 6px !important;
+    border: 1px solid transparent !important;
+    background: transparent !important;
+    color: #b8cfe8 !important; font-weight: 500 !important;
+    font-size: 13px !important; font-family: 'DM Sans', sans-serif !important;
+    cursor: pointer !important; transition: all 0.18s ease !important;
+    margin: 0 !important; box-sizing: border-box !important;
+    line-height: 1 !important; overflow: hidden !important;
 }
-/* Gold left accent on selected */
-section[data-testid="stSidebar"] .stRadio label[data-checked="true"],
 section[data-testid="stSidebar"] .stRadio label:has(input:checked) {
-    background:linear-gradient(90deg,rgba(255,215,0,0.13),rgba(255,215,0,0.06)) !important;
-    border-color:rgba(255,215,0,0.42) !important;
-    color:#FFD700 !important;
+    background: rgba(255,215,0,0.1) !important;
+    border-color: rgba(255,215,0,0.3) !important;
+    color: #FFD700 !important;
 }
 section[data-testid="stSidebar"] .stRadio label > div {
-    display:flex !important; align-items:center !important;
-    height:100% !important; padding:0 !important; margin:0 !important;
-    width:100% !important;
+    display: flex !important; align-items: center !important;
+    height: 100% !important; padding: 0 !important; margin: 0 !important; width: 100% !important;
 }
 section[data-testid="stSidebar"] .stRadio label p {
-    margin:0 !important; padding:0 !important; line-height:1 !important;
+    margin: 0 !important; padding: 0 !important; line-height: 1 !important;
+    font-family: 'DM Sans', sans-serif !important;
 }
 section[data-testid="stSidebar"] .stRadio label:hover {
-    background:rgba(255,215,0,0.09) !important;
-    border-color:rgba(255,215,0,0.32) !important;
-    transform:translateX(5px) !important;
+    background: rgba(255,215,0,0.07) !important;
+    border-color: rgba(255,215,0,0.2) !important;
+    transform: translateX(4px) !important;
 }
-/* Nav links — exact same height and width */
 [data-testid="stSidebarNav"] a {
-    height:46px !important; min-height:46px !important; max-height:46px !important;
-    padding:0 14px 0 18px !important;
-    width:100% !important;
-    box-sizing:border-box !important; align-items:center !important;
+    height: 44px !important; min-height: 44px !important; max-height: 44px !important;
+    padding: 0 14px 0 16px !important; width: 100% !important;
+    box-sizing: border-box !important; align-items: center !important;
 }
 section[data-testid="stSidebar"] .stButton button {
-    background:linear-gradient(135deg,#FFD700 0%,#f5c400 55%,#e8b000 100%) !important;
-    color:#0a1628 !important; font-weight:800 !important;
-    border:none !important; border-radius:10px !important;
-    width:100% !important; transition:all 0.25s ease !important;
-    box-shadow:0 3px 14px rgba(255,215,0,0.38) !important;
+    background: linear-gradient(135deg, #FFD700 0%, #f5c400 55%, #e8b000 100%) !important;
+    color: #06101e !important; font-weight: 700 !important;
+    border: none !important; border-radius: 6px !important;
+    width: 100% !important; transition: all 0.2s ease !important;
+    font-family: 'DM Sans', sans-serif !important;
+    font-size: 13px !important; letter-spacing: 0.2px !important;
+    box-shadow: 0 2px 8px rgba(255,215,0,0.25) !important;
 }
 section[data-testid="stSidebar"] .stButton button:hover {
-    transform:translateY(-2px) !important;
-    box-shadow:0 7px 22px rgba(255,215,0,0.52) !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 14px rgba(255,215,0,0.4) !important;
 }
-[data-testid="stMainBlockContainer"] { animation:fadeSlideIn 0.4s ease both; }
+
+/* ── Main content ── */
+[data-testid="stMainBlockContainer"] { animation: fadeUp 0.35s ease both; }
+section.main > div[data-testid="stMainBlockContainer"] > div {
+    max-width: 1120px !important; margin: 0 auto !important;
+}
+
+/* ── Containers/cards ── */
 [data-testid="stVerticalBlockBorderWrapper"] {
-    background:white !important; border:1px solid rgba(200,215,235,0.8) !important;
-    border-radius:12px !important; box-shadow:0 2px 12px rgba(0,0,0,0.05) !important;
+    background: #ffffff !important;
+    border: 1px solid rgba(180,170,150,0.25) !important;
+    border-radius: 8px !important;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04) !important;
 }
-details { border:1px solid rgba(200,215,235,0.8) !important; border-radius:12px !important; overflow:hidden; background:white !important; }
-details[open] summary { border-bottom:1px solid rgba(200,215,235,0.7); }
+
+/* ── Expanders ── */
+details {
+    border: 1px solid rgba(180,170,150,0.25) !important;
+    border-radius: 8px !important; overflow: hidden;
+    background: #ffffff !important;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.05) !important;
+}
+details[open] summary { border-bottom: 1px solid rgba(180,170,150,0.2); }
 summary {
-    background:linear-gradient(90deg,#edf3fb 0%,#f5f9fd 100%) !important;
-    font-weight:700 !important; color:#1a3a5c !important;
-    padding:14px 18px !important; border-radius:12px !important;
+    background: #faf9f7 !important;
+    font-weight: 600 !important; color: #1a2332 !important;
+    padding: 14px 18px !important; border-radius: 8px !important;
+    font-family: 'DM Sans', sans-serif !important;
+    font-size: 14px !important;
 }
+summary:hover { background: #f3f1ee !important; }
+
+/* ── Inputs ── */
 [data-testid="stTextInput"] input,
 [data-testid="stTextArea"] textarea {
-    background:white !important; border:1px solid rgba(200,215,235,0.9) !important;
-    border-radius:8px !important; color:#0a1628 !important;
+    background: #ffffff !important;
+    border: 1px solid rgba(180,170,150,0.35) !important;
+    border-radius: 6px !important; color: #1a2332 !important;
+    font-family: 'DM Sans', sans-serif !important;
+    font-size: 14px !important;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
 }
 [data-testid="stTextInput"] input:focus,
 [data-testid="stTextArea"] textarea:focus {
-    border-color:#FFD700 !important; box-shadow:0 0 0 2px rgba(255,215,0,0.15) !important;
+    border-color: #c9a800 !important;
+    box-shadow: 0 0 0 3px rgba(255,215,0,0.12) !important;
 }
-[data-testid="stFormSubmitButton"] button, button[kind="primary"] {
-    background:linear-gradient(135deg,#FFD700 0%,#f5c400 55%,#e8b000 100%) !important;
-    color:#0a1628 !important; font-weight:800 !important;
-    border:none !important; border-radius:10px !important;
-    box-shadow:0 3px 14px rgba(255,215,0,0.38) !important; transition:all 0.25s ease !important;
-}
-.stTabs [data-baseweb="tab-list"] { background:transparent; border-bottom:2px solid rgba(200,215,235,0.85); gap:4px; padding:0; }
-.stTabs [data-baseweb="tab"] { color:#7a90aa !important; font-weight:600 !important; font-size:14px !important; padding:11px 26px !important; border-radius:10px 10px 0 0 !important; background:transparent !important; transition:all 0.2s ease !important; }
-.stTabs [aria-selected="true"] { background:white !important; color:#0a1628 !important; font-weight:700 !important; border-bottom-color:white !important; margin-bottom:-2px !important; box-shadow:inset 0 -3px 0 #FFD700 !important; }
-.stTabs [data-baseweb="tab-panel"] { background:white; border:1px solid rgba(200,215,235,0.8); border-top:none; border-radius:0 10px 10px 10px; padding:28px; box-shadow:0 8px 36px rgba(0,0,0,0.07); }
-.stAlert { border-radius:10px !important; }
-hr { border:none !important; height:1px !important; background:linear-gradient(90deg,transparent,#bfcfe4,transparent) !important; margin:22px 0 !important; }
-h3 { color:#0a1628 !important; font-weight:800 !important; }
-h4 { color:#1a3a5c !important; font-weight:700 !important; border-left:3px solid #FFD700; padding-left:12px; }
-.stCaption { color:#8099b8 !important; font-size:12px !important; }
-.search-result-card {
-    background:white; border:1px solid rgba(200,215,235,0.8);
-    border-left:4px solid #FFD700; border-radius:10px;
-    padding:14px 18px; margin-bottom:0px;
-    box-shadow:0 2px 8px rgba(0,0,0,0.04);
-    transition:all 0.2s ease;
-}
-.search-result-card:hover {
-    border-left-color:#e8b000;
-    box-shadow:0 4px 18px rgba(0,0,0,0.1);
-    transform:translateX(3px);
-}
-.search-result-title { font-size:15px; font-weight:700; color:#0a1628; margin-bottom:4px; }
-.search-result-meta { font-size:12px; color:#8099b8; }
-.category-chip { display:inline-block; background:rgba(255,215,0,0.12); border:1px solid rgba(255,215,0,0.3); border-radius:20px; padding:3px 12px; font-size:11px; font-weight:700; color:#7a5c00; margin-right:6px; }
 
-/* Constrain main content width */
-section.main > div[data-testid="stMainBlockContainer"] > div {
-    max-width: 1100px !important;
-    margin: 0 auto !important;
+/* ── Primary buttons ── */
+[data-testid="stFormSubmitButton"] button, button[kind="primary"] {
+    background: linear-gradient(135deg, #FFD700 0%, #f5c400 55%, #e8b000 100%) !important;
+    color: #06101e !important; font-weight: 700 !important;
+    border: none !important; border-radius: 6px !important;
+    font-family: 'DM Sans', sans-serif !important;
+    font-size: 14px !important; letter-spacing: 0.2px !important;
+    box-shadow: 0 2px 8px rgba(255,215,0,0.25) !important;
+    transition: all 0.2s ease !important;
 }
-/* Sidebar buttons stay gold */
-section[data-testid="stSidebar"] .stButton button {
-    background: linear-gradient(135deg,#FFD700 0%,#f5c400 55%,#e8b000 100%) !important;
-    color: #0a1628 !important;
+[data-testid="stFormSubmitButton"] button:hover, button[kind="primary"]:hover {
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 14px rgba(255,215,0,0.4) !important;
+}
+
+/* ── Tabs ── */
+.stTabs [data-baseweb="tab-list"] {
+    background: transparent; gap: 2px; padding: 0;
+    border-bottom: 2px solid rgba(180,170,150,0.2);
+}
+.stTabs [data-baseweb="tab"] {
+    color: #8a9ab0 !important; font-weight: 500 !important;
+    font-size: 13.5px !important; padding: 10px 22px !important;
+    border-radius: 6px 6px 0 0 !important; background: transparent !important;
+    font-family: 'DM Sans', sans-serif !important;
+    transition: all 0.18s ease !important;
+}
+.stTabs [data-baseweb="tab"]:hover { color: #1a2332 !important; background: rgba(0,0,0,0.03) !important; }
+.stTabs [aria-selected="true"] {
+    background: #fff !important; color: #1a2332 !important;
+    font-weight: 700 !important; border-bottom-color: #fff !important;
+    margin-bottom: -2px !important; box-shadow: inset 0 -3px 0 #FFD700 !important;
+}
+.stTabs [data-baseweb="tab-panel"] {
+    background: #fff; border: 1px solid rgba(180,170,150,0.2);
+    border-top: none; border-radius: 0 8px 8px 8px;
+    padding: 24px; box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+}
+
+/* ── Misc ── */
+.stAlert { border-radius: 8px !important; }
+hr {
+    border: none !important; height: 1px !important;
+    background: linear-gradient(90deg, transparent, rgba(180,170,150,0.4), transparent) !important;
+    margin: 20px 0 !important;
+}
+h3 {
+    color: #0a1628 !important; font-weight: 700 !important;
+    font-family: 'Sora', sans-serif !important;
+}
+h4 {
+    color: #1a3a5c !important; font-weight: 700 !important;
+    font-family: 'DM Sans', sans-serif !important;
+    border-left: 3px solid #FFD700; padding-left: 12px;
+}
+.stCaption { color: #9a9080 !important; font-size: 12px !important; }
+
+/* ── Category chips ── */
+.category-chip {
+    display: inline-block;
+    background: rgba(255,215,0,0.1);
+    border: 1px solid rgba(200,160,0,0.25);
+    border-radius: 4px;
+    padding: 2px 10px;
+    font-size: 10.5px; font-weight: 600;
+    color: #7a5c00; margin-right: 6px;
+    font-family: 'DM Mono', monospace;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+}
+
+/* ── List rows (FAQ, search, category) ── */
+.kb-list-container {
+    background: #fff;
+    border: 1px solid rgba(180,170,150,0.25);
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+}
+
+/* ── Recent panel items ── */
+.recent-item {
+    padding: 12px 16px;
+    border-bottom: 1px solid rgba(180,170,150,0.15);
+    transition: background 0.15s ease;
+    cursor: pointer;
+}
+.recent-item:last-child { border-bottom: none; }
+.recent-item:hover { background: #faf7f0; }
+.recent-title {
+    font-size: 13px; font-weight: 600; color: #1a2332;
+    line-height: 1.4; margin-bottom: 4px;
+    font-family: 'DM Sans', sans-serif;
+}
+.recent-meta {
+    font-size: 11px; color: #9a9080;
+    font-family: 'DM Mono', monospace;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -419,15 +518,25 @@ CAT_ICONS = {"HOOP List":"📋","Reports":"📊","Tools":"🔧","Escalation":"�
 # RENDER HELPERS
 # ─────────────────────────────────────────
 def render_header(title, subtitle=""):
-    sub = f"<p style='font-size:13px;color:rgba(255,255,255,0.55);margin:4px 0 0 0;'>{subtitle}</p>" if subtitle else ""
+    sub = (
+        f"<p style='font-size:13px;color:rgba(255,255,255,0.45);margin:6px 0 0 0;"
+        f"font-family:DM Sans,sans-serif;font-weight:400;letter-spacing:0.1px;'>{subtitle}</p>"
+    ) if subtitle else ""
     st.markdown(
-        f"<div style='background:#0a1628;padding:22px 36px;border-radius:16px;"
-        f"margin-bottom:24px;border-bottom:3px solid #FFD700;"
-        f"box-shadow:0 8px 36px rgba(6,16,34,0.38);'>"
-        f"<p style='font-size:10px;color:#FFD700;font-weight:800;"
-        f"letter-spacing:2.8px;text-transform:uppercase;margin:0 0 6px 0;'>"
-        f"HERTZ &middot; POWERED BY CALLINSITE</p>"
-        f"<p style='font-size:26px;font-weight:900;color:white;margin:0;line-height:1.2;'>{title}</p>"
+        f"<div style='"
+        f"background:linear-gradient(135deg,#06101e 0%,#0d1e30 50%,#091624 100%);"
+        f"padding:24px 36px 22px;border-radius:10px;"
+        f"margin-bottom:24px;"
+        f"border-bottom:2px solid #c9a800;"
+        f"box-shadow:0 4px 24px rgba(0,0,0,0.18),0 1px 0 rgba(255,215,0,0.1);"
+        f"position:relative;overflow:hidden;'>"
+        f"<div style='position:absolute;top:0;right:0;width:200px;height:100%;"
+        f"background:linear-gradient(135deg,transparent 40%,rgba(255,215,0,0.04));'></div>"
+        f"<p style='font-family:DM Mono,monospace;font-size:9.5px;font-weight:500;"
+        f"color:rgba(255,215,0,0.5);letter-spacing:3px;text-transform:uppercase;"
+        f"margin:0 0 8px 0;'>HERTZ &nbsp;&middot;&nbsp; POWERED BY CALLINSITE</p>"
+        f"<p style='font-family:Sora,sans-serif;font-size:24px;font-weight:800;"
+        f"color:#ffffff;margin:0;line-height:1.15;letter-spacing:-0.3px;'>{title}</p>"
         f"{sub}</div>",
         unsafe_allow_html=True
     )
@@ -679,22 +788,30 @@ def render_edit_form(doc, form_key):
 # ─────────────────────────────────────────
 def page_login():
     st.markdown("""
-    <div style="max-width:420px;margin:80px auto 0 auto;padding:40px;
-                background:white;border:1px solid rgba(200,215,235,0.9);
-                border-radius:16px;box-shadow:0 8px 36px rgba(0,0,0,0.1);">
+    <div style="max-width:400px;margin:80px auto 0 auto;">
         <div style="text-align:center;margin-bottom:32px;">
-            <div style="background:linear-gradient(135deg,#FFD700 0%,#f5c400 60%,#e8b000 100%);
-                        display:inline-block;padding:8px 26px;border-radius:7px;
-                        box-shadow:0 4px 18px rgba(255,215,0,0.45);">
+            <div style="background:linear-gradient(135deg,#FFD700 0%,#e8b000 100%);
+                        display:inline-block;padding:7px 22px;border-radius:4px;
+                        box-shadow:0 2px 12px rgba(255,215,0,0.3);">
                 <span style="font-family:Arial Black,Impact,sans-serif;
-                             font-size:24px;font-weight:900;color:#0a1220;letter-spacing:3px;">HERTZ</span>
+                             font-size:22px;font-weight:900;color:#06101e;letter-spacing:3px;">HERTZ</span>
             </div>
-            <div style="font-size:9px;letter-spacing:3.5px;margin-top:10px;
-                        text-transform:uppercase;font-weight:700;color:#7a90aa;">
+            <div style="font-family:'DM Mono',monospace;font-size:9px;letter-spacing:3px;
+                        margin-top:8px;text-transform:uppercase;color:#9a9080;">
                 Powered by Callinsite
             </div>
-            <h2 style="color:#0a1628;margin-top:20px;font-size:1.3rem;font-weight:700;">RTA Knowledge Base</h2>
-            <p style="color:#7a90aa;font-size:0.85rem;margin-top:4px;">Sign in to access process guides</p>
+        </div>
+        <div style="background:#fff;border:1px solid rgba(180,170,150,0.3);
+                    border-radius:10px;padding:36px 40px;
+                    box-shadow:0 2px 8px rgba(0,0,0,0.07),0 12px 40px rgba(0,0,0,0.05);">
+            <h2 style="font-family:'Sora',sans-serif;color:#0a1628;
+                       margin:0 0 4px 0;font-size:1.2rem;font-weight:800;">
+                RTA Knowledge Base
+            </h2>
+            <p style="font-family:'DM Sans',sans-serif;color:#9a9080;
+                      font-size:13px;margin:0 0 24px 0;">
+                Sign in to access process guides and reports
+            </p>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -720,14 +837,14 @@ def page_login():
 def render_recent_uploads_panel():
     """Right panel — compact list of recently submitted docs, each row is clickable."""
     st.markdown("""
-    <p style='font-size:10px;font-weight:800;letter-spacing:2px;
-              color:#7a90aa;text-transform:uppercase;margin:0 0 12px 0;'>
+    <p style='font-family:DM Mono,monospace;font-size:9px;font-weight:500;
+              letter-spacing:3px;color:#9a9080;text-transform:uppercase;
+              margin:0 0 14px 0;'>
         Recently Added
     </p>
-    <style>
-    .recent-list-wrap { border-radius:8px; overflow:hidden; }
-    </style>
-    <div class="recent-list-wrap">
+    <div style='background:#fff;border:1px solid rgba(180,170,150,0.25);
+                border-radius:8px;overflow:hidden;
+                box-shadow:0 1px 4px rgba(0,0,0,0.05);'>
     """, unsafe_allow_html=True)
 
     recent = (
@@ -850,9 +967,9 @@ def page_knowledge_base():
         categories = get_categories()
         if categories:
             st.markdown(
-                "<p style='font-size:10px;font-weight:800;letter-spacing:2px;"
-                "color:#7a90aa;text-transform:uppercase;margin:0 0 10px 0;'>"
-                "🗂️ Browse by Category</p>",
+                "<p style='font-family:DM Mono,monospace;font-size:9px;font-weight:500;"
+                "letter-spacing:3px;color:#9a9080;text-transform:uppercase;margin:0 0 10px 0;'>"
+                "Browse by Category</p>",
                 unsafe_allow_html=True
             )
             num_cats = len(categories)
@@ -925,9 +1042,9 @@ def page_knowledge_base():
                 st.info("No documents published yet.")
             else:
                 st.markdown(
-                    "<p style='font-size:10px;font-weight:800;letter-spacing:2px;"
-                    "color:#7a90aa;text-transform:uppercase;margin:0 0 14px 0;'>"
-                    "💡 Frequently Asked</p>",
+                    "<p style='font-family:DM Mono,monospace;font-size:9px;font-weight:500;"
+                    "letter-spacing:3px;color:#9a9080;text-transform:uppercase;margin:0 0 14px 0;'>"
+                    "Frequently Asked</p>",
                     unsafe_allow_html=True
                 )
                 # Wrap FAQ in a styled container
