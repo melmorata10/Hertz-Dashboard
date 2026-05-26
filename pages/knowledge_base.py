@@ -316,15 +316,34 @@ def render_doc_card(doc, btn_key_prefix):
             st.session_state.kb_selected_doc = doc["id"]
             st.rerun()
 
-def render_doc_detail(doc):
+def render_doc_detail(doc, user=None):
     cat_name  = (doc.get("kb_categories") or {}).get("name","—")
     icon      = CAT_ICONS.get(cat_name,"📄")
     submitter = (doc.get("kb_users") or {}).get("name","Unknown")
     reviewed  = (doc.get("reviewed_at") or "")[:10] or "—"
-    if st.button("← Back", key="back_btn"):
-        st.session_state.kb_selected_doc = None
-        st.rerun()
+    is_admin  = user and user.get("role") in ["admin","super_admin"]
+
+    # Top action bar
+    col_back, col_edit, col_spacer = st.columns([1, 1, 8])
+    with col_back:
+        if st.button("← Back", key="back_btn"):
+            st.session_state.kb_selected_doc = None
+            st.session_state.pop("kb_inline_edit", None)
+            st.rerun()
+    with col_edit:
+        if is_admin:
+            edit_active = st.session_state.get("kb_inline_edit") == doc["id"]
+            label = "✏️ Editing..." if edit_active else "✏️ Edit"
+            if st.button(label, key="detail_edit_btn"):
+                if edit_active:
+                    st.session_state.pop("kb_inline_edit", None)
+                else:
+                    st.session_state["kb_inline_edit"] = doc["id"]
+                st.rerun()
+
     st.markdown("<br>", unsafe_allow_html=True)
+
+    # Doc header
     st.markdown(
         f"<div style='background:white;border:1px solid rgba(200,215,235,0.8);"
         f"border-left:5px solid #FFD700;border-radius:12px;padding:20px 24px;"
@@ -336,6 +355,13 @@ def render_doc_detail(doc):
         f"</div>",
         unsafe_allow_html=True
     )
+
+    # Inline edit form
+    if is_admin and st.session_state.get("kb_inline_edit") == doc["id"]:
+        render_edit_form(doc, f"inline_edit_{doc['id']}")
+        st.markdown("---")
+
+    # Content
     if doc.get("content"):
         with st.container(border=True):
             st.markdown(doc["content"])
@@ -449,7 +475,7 @@ def page_knowledge_base():
     if st.session_state.kb_selected_doc:
         doc = get_doc_by_id(st.session_state.kb_selected_doc)
         if doc:
-            render_doc_detail(doc)
+            render_doc_detail(doc, user=st.session_state.get("user"))
         else:
             st.session_state.kb_selected_doc = None
             st.rerun()
