@@ -1225,6 +1225,93 @@ def _display_summary(df: pd.DataFrame, table_key: str = "main"):
             save_comments(st.session_state["lob_comments"])
 
 
+def _copy_email_button(df: pd.DataFrame, key: str) -> None:
+    """Render a 'Copy for Email' button.
+
+    Clicking it copies the summary table as rich HTML to the clipboard.
+    Green / yellow / red cell colours are preserved when pasting into
+    Outlook, Gmail, Word, or any HTML-aware email client.
+
+    Uses document.execCommand('copy') on a selected hidden div — this
+    works inside Streamlit's sandboxed iframe (the newer Clipboard API
+    does not without explicit allow="clipboard-write" on the iframe).
+    """
+    import json as _json
+
+    html_content = _summary_to_html_table(df)
+    html_js      = _json.dumps(html_content)   # properly escaped JS string literal
+    fn           = f"doCopy_{key}"
+    bid          = f"copybtn_{key}"
+
+    components.html(f"""
+<style>
+  body {{ margin:0; padding:0; }}
+  .cbwrap button {{
+    background: linear-gradient(135deg, #1a3a5c 0%, #0a1628 100%);
+    color: #FFD700;
+    border: 1.5px solid rgba(255,215,0,0.45);
+    border-radius: 8px;
+    padding: 5px 10px;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: Inter, Arial, sans-serif;
+    letter-spacing: 0.3px;
+    width: 100%;
+    white-space: nowrap;
+    transition: all 0.2s ease;
+  }}
+  .cbwrap button:hover {{
+    background: linear-gradient(135deg, #264a72 0%, #152238 100%);
+    border-color: #FFD700;
+    box-shadow: 0 3px 12px rgba(255,215,0,0.25);
+  }}
+</style>
+<div class="cbwrap">
+  <button id="{bid}" onclick="{fn}()">📋 Copy for Email</button>
+</div>
+<script>
+function {fn}() {{
+  var html = {html_js};
+  // Create a hidden element with the formatted HTML table
+  var el = document.createElement('div');
+  el.innerHTML = html;
+  el.style.position = 'fixed';
+  el.style.left = '-9999px';
+  el.style.top  = '0';
+  document.body.appendChild(el);
+  // Select the element and copy — preserves rich HTML in clipboard
+  var range = document.createRange();
+  range.selectNodeContents(el);
+  var sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+  var ok = false;
+  try {{ ok = document.execCommand('copy'); }} catch(e) {{}}
+  sel.removeAllRanges();
+  document.body.removeChild(el);
+  // Visual feedback
+  var btn = document.getElementById('{bid}');
+  if (ok) {{
+    btn.textContent = '✅ Copied!';
+    btn.style.background = 'linear-gradient(135deg,#1a5e1a,#2a7a2a)';
+    btn.style.color = '#fff';
+    btn.style.borderColor = '#4ade80';
+  }} else {{
+    btn.textContent = '⚠️ Press Ctrl+C';
+    btn.style.borderColor = '#ffa500';
+  }}
+  setTimeout(function() {{
+    btn.textContent = '📋 Copy for Email';
+    btn.style.background = '';
+    btn.style.color = '';
+    btn.style.borderColor = '';
+  }}, 2500);
+}}
+</script>
+""", height=36, scrolling=False)
+
+
 def _merge_editor_edits(df: pd.DataFrame, table_key: str) -> pd.DataFrame:
     """Overlay user edits from st.data_editor session state onto df."""
     state = st.session_state.get(f"editor_{table_key}", {})
@@ -1981,9 +2068,12 @@ with tab1:
             (summary_df["LOB"] == "Grand Total") | (~summary_df["LOB"].isin(_HIDDEN_LOBS))
         ].reset_index(drop=True)
 
-        hdr_col, btn_col = st.columns([9, 1])
+        hdr_col, copy_col, btn_col = st.columns([7, 2, 1])
         with hdr_col:
             st.subheader("Performance by Line of Business")
+        with copy_col:
+            st.markdown("<div style='padding-top:6px'></div>", unsafe_allow_html=True)
+            _copy_email_button(_main_df, "main")
         with btn_col:
             st.markdown("<div style='padding-top:8px'></div>", unsafe_allow_html=True)
             if st.button("⛶", key="fs_main", help="Expand table to full screen", use_container_width=True):
@@ -2035,9 +2125,12 @@ with tab1:
                     mask = (vdf["LOB"] == "Grand Total") | (vdf["NCO"].fillna(0) > 0)
                     vdf = vdf[mask].reset_index(drop=True)
 
-                v_hdr, v_btn = st.columns([9, 1])
+                v_hdr, v_copy, v_btn = st.columns([7, 2, 1])
                 with v_hdr:
                     st.markdown(f"#### {vendor}")
+                with v_copy:
+                    st.markdown("<div style='padding-top:4px'></div>", unsafe_allow_html=True)
+                    _copy_email_button(vdf, f"vendor_{vendor}")
                 with v_btn:
                     st.markdown("<div style='padding-top:6px'></div>", unsafe_allow_html=True)
                     if st.button("⛶", key=f"fs_vendor_{vendor}", help="Expand table to full screen", use_container_width=True):
