@@ -17,29 +17,84 @@ supabase = get_supabase()
 # FILE TEXT EXTRACTION
 # ─────────────────────────────────────────
 def extract_text_from_file(file) -> str:
+    """Extract text from DOCX or PDF preserving formatting as markdown."""
     file_bytes = file.read()
     name = file.name.lower()
     text_lines = []
+
     if name.endswith(".docx"):
         try:
             from docx import Document as DocxDoc
+            from docx.oxml.ns import qn
             doc = DocxDoc(BytesIO(file_bytes))
+
+            # Track numbering counters per abstract/num level
+            num_counters = {}
+
             for para in doc.paragraphs:
                 t = para.text.strip()
-                if not t:
+                style = para.style.name if para.style else ""
+
+                # Detect inline bold/italic runs
+                rich = ""
+                for run in para.runs:
+                    rt = run.text
+                    if not rt:
+                        continue
+                    if run.bold and run.italic:
+                        rich += f"***{rt}***"
+                    elif run.bold:
+                        rich += f"**{rt}**"
+                    elif run.italic:
+                        rich += f"*{rt}*"
+                    else:
+                        rich += rt
+                rich = rich.strip()
+                if not rich:
                     text_lines.append("")
                     continue
-                style = para.style.name if para.style else ""
+
+                # Headings
                 if "Heading 1" in style:
-                    text_lines.append(f"## {t}")
+                    text_lines.append(f"## {rich}")
+                    continue
                 elif "Heading 2" in style:
-                    text_lines.append(f"### {t}")
+                    text_lines.append(f"### {rich}")
+                    continue
                 elif "Heading 3" in style:
-                    text_lines.append(f"#### {t}")
-                elif "List" in style:
-                    text_lines.append(f"- {t}")
-                else:
-                    text_lines.append(t)
+                    text_lines.append(f"#### {rich}")
+                    continue
+
+                # Numbered lists — detect via paragraph numPr XML
+                num_pr = para._p.find(qn("w:pPr"))
+                num_id = None
+                ilvl   = 0
+                if num_pr is not None:
+                    np_el = num_pr.find(qn("w:numPr"))
+                    if np_el is not None:
+                        ilvl_el  = np_el.find(qn("w:ilvl"))
+                        numid_el = np_el.find(qn("w:numId"))
+                        if ilvl_el is not None and numid_el is not None:
+                            num_id = numid_el.get(qn("w:val"))
+                            ilvl   = int(ilvl_el.get(qn("w:val"), 0))
+
+                if num_id is not None:
+                    key = f"{num_id}_{ilvl}"
+                    num_counters[key] = num_counters.get(key, 0) + 1
+                    indent = "   " * ilvl
+                    text_lines.append(f"{indent}{num_counters[key]}. {rich}")
+                    continue
+
+                # Bullet lists
+                if "List" in style or style.startswith("List"):
+                    indent = "   " * max(0, style.count("Bullet") - 1 + style.count("Number") - 1)
+                    text_lines.append(f"- {rich}")
+                    continue
+
+                # Normal paragraph
+                text_lines.append(rich)
+
+            # Tables
             for table in doc.tables:
                 rows = []
                 for i, row in enumerate(table.rows):
@@ -49,8 +104,10 @@ def extract_text_from_file(file) -> str:
                         rows.append("|" + "|".join(["---"] * len(cells)) + "|")
                 text_lines.extend(rows)
                 text_lines.append("")
+
         except Exception as e:
             return f"Could not extract text from Word file: {e}"
+
     elif name.endswith(".pdf"):
         try:
             import pdfplumber
@@ -71,6 +128,7 @@ def extract_text_from_file(file) -> str:
                     text_lines.append("")
             except Exception as e:
                 return f"Could not extract text from PDF: {e}"
+
     return "\n".join(text_lines).strip()
 
 # ─────────────────────────────────────────
