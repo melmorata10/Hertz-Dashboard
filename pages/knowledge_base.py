@@ -244,7 +244,8 @@ section[data-testid="stSidebar"] .stRadio label {
     background:rgba(255,255,255,0.04) !important;
     color:#ccddf8 !important; font-weight:600 !important; font-size:13.5px !important;
     cursor:pointer !important; transition:all 0.22s ease !important;
-    margin:4px 0 !important;
+    margin:4px 0 !important; min-height:46px !important;
+    box-sizing:border-box !important;
 }
 section[data-testid="stSidebar"] .stRadio label:hover {
     background:rgba(255,215,0,0.09) !important;
@@ -253,6 +254,11 @@ section[data-testid="stSidebar"] .stRadio label:hover {
 }
 section[data-testid="stSidebar"] .stRadio div[role="radiogroup"] {
     gap:0px !important;
+}
+/* Match nav links to same height */
+[data-testid="stSidebarNav"] a {
+    min-height:46px !important;
+    box-sizing:border-box !important;
 }
 section[data-testid="stSidebar"] .stButton button {
     background:linear-gradient(135deg,#FFD700 0%,#f5c400 55%,#e8b000 100%) !important;
@@ -317,23 +323,18 @@ h4 { color:#1a3a5c !important; font-weight:700 !important; border-left:3px solid
 .search-result-meta { font-size:12px; color:#8099b8; }
 .category-chip { display:inline-block; background:rgba(255,215,0,0.12); border:1px solid rgba(255,215,0,0.3); border-radius:20px; padding:3px 12px; font-size:11px; font-weight:700; color:#7a5c00; margin-right:6px; }
 
-/* Make the card button invisible — acts as click overlay */
-div[data-testid="stButton"] > button[kind="secondary"] {
-    background: transparent !important;
-    border: none !important;
-    color: transparent !important;
-    height: 0px !important;
+/* Card overlay buttons — only hide buttons whose text is exactly "open" */
+button[data-testid="baseButton-secondary"][kind="secondary"] {
+    opacity: 0 !important;
+    height: 4px !important;
     padding: 0 !important;
-    margin: 0 0 12px 0 !important;
+    margin: -6px 0 8px 0 !important;
     font-size: 0 !important;
-    box-shadow: none !important;
+    border: none !important;
+    background: transparent !important;
     cursor: pointer !important;
     width: 100% !important;
-}
-div[data-testid="stButton"] > button[kind="secondary"]:hover {
-    background: transparent !important;
-    box-shadow: none !important;
-    transform: none !important;
+    display: block !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -410,34 +411,36 @@ def render_doc_card(doc, btn_key_prefix):
     cat_name = (doc.get("kb_categories") or {}).get("name","—")
     icon     = CAT_ICONS.get(cat_name,"📄")
     reviewed = (doc.get("reviewed_at") or "")[:10] or "—"
-    preview  = (doc.get("content") or "")[:150].replace("\n"," ")
-    if preview: preview += "..."
+    # Strip markdown from preview
+    import re
+    raw_preview = (doc.get("content") or "")[:200]
+    raw_preview = re.sub(r"[#]+ *", "", raw_preview)
+    raw_preview = re.sub(r"\*+([^*]+)\*+", r"\1", raw_preview)
+    raw_preview = re.sub(r"\n+", " ", raw_preview).replace("\n", " ").strip()
+    preview = (raw_preview[:130] + "...") if len(raw_preview) > 130 else raw_preview
 
-    # Whole card is a clickable button
-    st.markdown("""
-    <style>
-    div[data-testid="stButton"] button.card-btn {
-        text-align: left !important;
-        white-space: normal !important;
-    }
-    </style>
+    st.markdown(f"""
+    <div class="search-result-card">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;">
+            <div style="flex:1;min-width:0;">
+                <div class="search-result-title">{doc['title']}</div>
+                <div class="search-result-meta" style="margin-top:5px;">
+                    <span class="category-chip">{icon} {cat_name}</span>
+                    Last updated: {reviewed}
+                </div>
+                {"<div style='color:#a0aec0;font-style:italic;font-size:12px;margin-top:6px;line-height:1.5;'>" + preview + "</div>" if preview else ""}
+            </div>
+            <div style="color:#b0c4d8;font-size:18px;padding-top:2px;flex-shrink:0;">›</div>
+        </div>
+    </div>
     """, unsafe_allow_html=True)
 
-    card_html = (
-        f"<div class='search-result-card' style='cursor:pointer;'>"
-        f"<div class='search-result-title'>{doc['title']}</div>"
-        f"<div class='search-result-meta'>"
-        f"<span class='category-chip'>{icon} {cat_name}</span>"
-        f"Last updated: {reviewed}"
-        + (f"<br><span style='color:#a0aec0;font-style:italic;font-size:11px;'>{preview}</span>" if preview else "")
-        + "</div></div>"
-    )
-    st.markdown(card_html, unsafe_allow_html=True)
-
-    # Invisible full-width button overlay
-    if st.button(f"↗ {doc['title']}", key=f"{btn_key_prefix}_{doc['id']}",
-                  use_container_width=True,
-                  help=f"Open: {doc['title']}"):
+    # Full-width transparent clickable button over the card
+    if st.button(
+        "open",
+        key=f"{btn_key_prefix}_{doc['id']}",
+        use_container_width=True,
+    ):
         st.session_state.kb_selected_doc = doc["id"]
         st.rerun()
 
@@ -710,17 +713,20 @@ def page_knowledge_base():
                     st.rerun()
 
     # Search bar
-    search = st.text_input(
+    # Use on_change callback for instant search without pressing Enter
+    def _on_search_change():
+        val = st.session_state.get("_kb_search_widget", "")
+        st.session_state.kb_search_query    = val
+        st.session_state.kb_category_filter = None
+
+    st.text_input(
         "🔍 Search",
         value=st.session_state.kb_search_query,
-        placeholder="Start typing — results appear after 3 characters..."
+        placeholder="Start typing — results appear after 3 characters...",
+        key="_kb_search_widget",
+        on_change=_on_search_change
     )
-    if search != st.session_state.kb_search_query:
-        st.session_state.kb_search_query    = search
-        st.session_state.kb_category_filter = None
-        # Only rerun if cleared or 3+ chars — avoids rerun on every single keypress
-        if len(search) == 0 or len(search) >= 3:
-            st.rerun()
+    search = st.session_state.kb_search_query
 
     st.markdown("<br>", unsafe_allow_html=True)
     cat_filter = st.session_state.kb_category_filter
