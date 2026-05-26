@@ -28,8 +28,9 @@ def extract_text_from_file(file) -> str:
             from docx.oxml.ns import qn
             doc = DocxDoc(BytesIO(file_bytes))
 
-            # Track numbering counters per abstract/num level
+            # Track numbering — key: (num_id, ilvl), resets when non-list para interrupts
             num_counters = {}
+            prev_num_id  = None
 
             for para in doc.paragraphs:
                 t = para.text.strip()
@@ -51,21 +52,30 @@ def extract_text_from_file(file) -> str:
                         rich += rt
                 rich = rich.strip()
                 if not rich:
+                    # Blank line = list interrupted; reset counters for prev list
+                    if prev_num_id:
+                        for k in list(num_counters.keys()):
+                            if k.startswith(f"{prev_num_id}_"):
+                                num_counters[k] = 0
+                        prev_num_id = None
                     text_lines.append("")
                     continue
 
                 # Headings
                 if "Heading 1" in style:
+                    prev_num_id = None
                     text_lines.append(f"## {rich}")
                     continue
                 elif "Heading 2" in style:
+                    prev_num_id = None
                     text_lines.append(f"### {rich}")
                     continue
                 elif "Heading 3" in style:
+                    prev_num_id = None
                     text_lines.append(f"#### {rich}")
                     continue
 
-                # Numbered lists — detect via paragraph numPr XML
+                # Detect numbered list via numPr XML
                 num_pr = para._p.find(qn("w:pPr"))
                 num_id = None
                 ilvl   = 0
@@ -79,19 +89,31 @@ def extract_text_from_file(file) -> str:
                             ilvl   = int(ilvl_el.get(qn("w:val"), 0))
 
                 if num_id is not None:
+                    # New list group detected — reset counters for this numId
+                    if num_id != prev_num_id and prev_num_id is not None:
+                        for k in list(num_counters.keys()):
+                            if k.startswith(f"{num_id}_"):
+                                num_counters[k] = 0
+                    # Reset deeper indent levels when parent level increments
+                    for k in list(num_counters.keys()):
+                        parts = k.rsplit("_", 1)
+                        if len(parts) == 2 and parts[0] == num_id and int(parts[1]) > ilvl:
+                            num_counters[k] = 0
                     key = f"{num_id}_{ilvl}"
                     num_counters[key] = num_counters.get(key, 0) + 1
+                    prev_num_id = num_id
                     indent = "   " * ilvl
                     text_lines.append(f"{indent}{num_counters[key]}. {rich}")
                     continue
 
                 # Bullet lists
-                if "List" in style or style.startswith("List"):
-                    indent = "   " * max(0, style.count("Bullet") - 1 + style.count("Number") - 1)
+                if "List" in style:
+                    prev_num_id = None
                     text_lines.append(f"- {rich}")
                     continue
 
-                # Normal paragraph
+                # Normal paragraph — reset list tracking
+                prev_num_id = None
                 text_lines.append(rich)
 
             # Tables
