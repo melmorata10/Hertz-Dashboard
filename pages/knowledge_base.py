@@ -788,7 +788,7 @@ def page_knowledge_base():
         return
 
     # ── Two-column layout ─────────────────────────────────────────────────
-    left_col, right_col = st.columns([3, 2])
+    left_col, right_col = st.columns([3, 1])
 
     with left_col:
         # Category chips
