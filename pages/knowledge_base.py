@@ -237,14 +237,21 @@ section[data-testid="stSidebar"] .stMarkdown h3 {
     letter-spacing:2.2px !important; text-transform:uppercase !important;
     border-bottom:1px solid rgba(255,215,0,0.18); padding-bottom:6px; margin-bottom:10px;
 }
-/* ── Sidebar radio items — uniform size matching nav links ── */
+/* ── Sidebar radio items — hide radio dot, full width, uniform height ── */
 section[data-testid="stSidebar"] .stRadio div[role="radiogroup"] {
     gap:4px !important;
+    width:100% !important;
+}
+/* Hide the yellow radio circle entirely */
+section[data-testid="stSidebar"] .stRadio input[type="radio"] { display:none !important; }
+section[data-testid="stSidebar"] .stRadio label > div:first-child {
+    display:none !important;
 }
 section[data-testid="stSidebar"] .stRadio label {
     display:flex !important; align-items:center !important;
     padding:0 14px 0 18px !important;
     height:46px !important; min-height:46px !important; max-height:46px !important;
+    width:100% !important;
     border-radius:10px !important;
     border:1px solid rgba(255,215,0,0.1) !important;
     background:rgba(255,255,255,0.04) !important;
@@ -252,10 +259,19 @@ section[data-testid="stSidebar"] .stRadio label {
     cursor:pointer !important; transition:all 0.22s ease !important;
     margin:0 !important; box-sizing:border-box !important;
     line-height:1 !important; overflow:hidden !important;
+    position:relative !important;
+}
+/* Gold left accent on selected */
+section[data-testid="stSidebar"] .stRadio label[data-checked="true"],
+section[data-testid="stSidebar"] .stRadio label:has(input:checked) {
+    background:linear-gradient(90deg,rgba(255,215,0,0.13),rgba(255,215,0,0.06)) !important;
+    border-color:rgba(255,215,0,0.42) !important;
+    color:#FFD700 !important;
 }
 section[data-testid="stSidebar"] .stRadio label > div {
     display:flex !important; align-items:center !important;
     height:100% !important; padding:0 !important; margin:0 !important;
+    width:100% !important;
 }
 section[data-testid="stSidebar"] .stRadio label p {
     margin:0 !important; padding:0 !important; line-height:1 !important;
@@ -265,10 +281,11 @@ section[data-testid="stSidebar"] .stRadio label:hover {
     border-color:rgba(255,215,0,0.32) !important;
     transform:translateX(5px) !important;
 }
-/* Match nav links to same height */
+/* Nav links — exact same height and width */
 [data-testid="stSidebarNav"] a {
     height:46px !important; min-height:46px !important; max-height:46px !important;
     padding:0 14px 0 18px !important;
+    width:100% !important;
     box-sizing:border-box !important; align-items:center !important;
 }
 section[data-testid="stSidebar"] .stButton button {
