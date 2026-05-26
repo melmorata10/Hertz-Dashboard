@@ -346,23 +346,48 @@ def render_edit_form(doc, form_key):
     cur_cat    = (doc.get("kb_categories") or {}).get("name", cat_names[0])
     if cur_cat not in cat_names:
         cur_cat = cat_names[0]
+
+    st.markdown("#### ✏️ Edit Document")
+
+    # File upload must be OUTSIDE st.form (Streamlit limitation)
+    extract_key   = f"extracted_{form_key}"
+    uploaded_file = st.file_uploader(
+        "📎 Upload new version — PDF or Word (replaces content below)",
+        type=["pdf", "docx"],
+        key=f"upload_{form_key}"
+    )
+    if uploaded_file is not None:
+        with st.spinner("Extracting content from file..."):
+            extracted = extract_text_from_file(uploaded_file)
+        if extracted:
+            st.session_state[extract_key] = extracted
+            st.success("✅ Content extracted — review and save below")
+        else:
+            st.warning("Could not extract text. Paste content manually.")
+
+    prefill_content = st.session_state.get(extract_key, doc.get("content", ""))
+
     with st.form(key=form_key):
-        st.markdown("#### ✏️ Edit Document")
-        new_title   = st.text_input("Title", value=doc.get("title",""))
-        new_cat     = st.selectbox("Category", options=cat_names, index=cat_names.index(cur_cat))
-        new_content = st.text_area("Content", value=doc.get("content",""), height=300)
-        col_s, col_c = st.columns([1,1])
+        new_title   = st.text_input("Title", value=doc.get("title", ""))
+        new_cat     = st.selectbox("Category", options=cat_names,
+                                    index=cat_names.index(cur_cat))
+        new_content = st.text_area("Content", value=prefill_content, height=300)
+        col_s, col_c = st.columns([1, 1])
         with col_s:
-            save = st.form_submit_button("💾 Save Changes", use_container_width=True, type="primary")
+            save = st.form_submit_button("💾 Save Changes",
+                                          use_container_width=True, type="primary")
         with col_c:
             cancel = st.form_submit_button("Cancel", use_container_width=True)
         if save:
-            update_doc(doc["id"], new_title, cat_map[new_cat], new_content, doc.get("version",1))
+            update_doc(doc["id"], new_title, cat_map[new_cat],
+                       new_content, doc.get("version", 1))
             st.session_state.pop("editing_doc", None)
+            st.session_state.pop(extract_key, None)
             st.toast("✅ Document updated!", icon="✅")
             st.rerun()
         if cancel:
             st.session_state.pop("editing_doc", None)
+            st.session_state.pop(extract_key, None)
             st.rerun()
 
 # ─────────────────────────────────────────
@@ -425,17 +450,7 @@ def page_knowledge_base():
             st.rerun()
         return
 
-    search = st.text_input(
-        "🔍 Search",
-        value=st.session_state.kb_search_query,
-        placeholder="Type to search... e.g. Chat, Allocation, EOD",
-        key="kb_search_input"
-    )
-    if search != st.session_state.kb_search_query:
-        st.session_state.kb_search_query = search
-        st.rerun()
-
-    # Category filter chips
+    # Category filter chips — shown above search
     categories = get_categories()
     if categories:
         st.markdown(
@@ -446,11 +461,22 @@ def page_knowledge_base():
         )
         cat_cols = st.columns(len(categories))
         for i, cat in enumerate(categories):
-            icon = CAT_ICONS.get(cat["name"],"📄")
+            icon = CAT_ICONS.get(cat["name"], "📄")
             with cat_cols[i]:
-                if st.button(f"{icon} {cat['name']}", key=f"cat_{cat['id']}", use_container_width=True):
+                if st.button(f"{icon} {cat['name']}", key=f"cat_{cat['id']}",
+                              use_container_width=True):
                     st.session_state.kb_search_query = cat["name"]
                     st.rerun()
+
+    # Search bar — value driven by session state so category chips work
+    search = st.text_input(
+        "🔍 Search",
+        value=st.session_state.kb_search_query,
+        placeholder="Type to search... e.g. Chat, Allocation, EOD"
+    )
+    if search != st.session_state.kb_search_query:
+        st.session_state.kb_search_query = search
+        st.rerun()
 
     st.markdown("<br>", unsafe_allow_html=True)
 
