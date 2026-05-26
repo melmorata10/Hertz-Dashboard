@@ -245,6 +245,9 @@ def search_docs(query):
             seen.add(doc["id"]); merged.append(doc)
     return merged
 
+def get_docs_by_category(category_id):
+    return supabase.table("kb_documents").select("*, kb_categories(name), kb_users!kb_documents_submitted_by_fkey(name)").eq("status","approved").eq("category_id",category_id).order("reviewed_at",desc=True).execute().data
+
 def get_all_approved():
     return supabase.table("kb_documents").select("*, kb_categories(name), kb_users!kb_documents_submitted_by_fkey(name)").eq("status","approved").order("reviewed_at",desc=True).execute().data
 
@@ -648,6 +651,45 @@ def page_user_management(user):
     if user["role"] != "super_admin":
         st.error("⛔ Access restricted to Super Admin only."); return
     render_header("👥 User Management")
+
+    # ── Category Management ───────────────────────────────────────────────
+    with st.expander("🗂️ Manage Categories", expanded=False):
+        cats = get_categories()
+        if cats:
+            st.markdown("**Existing Categories:**")
+            for cat in cats:
+                icon = CAT_ICONS.get(cat["name"], "📄")
+                col1, col2 = st.columns([5, 1])
+                with col1:
+                    st.write(f"{icon} **{cat['name']}** — {cat['description']}")
+                with col2:
+                    if st.button("🗑️", key=f"del_cat_{cat['id']}", help="Delete category"):
+                        supabase.table("kb_categories").delete().eq("id", cat["id"]).execute()
+                        st.toast(f"Category '{cat['name']}' deleted.", icon="🗑️")
+                        st.rerun()
+        st.markdown("---")
+        st.markdown("**Add New Category:**")
+        with st.form("add_cat_form", clear_on_submit=True):
+            col1, col2 = st.columns(2)
+            with col1:
+                new_cat_name = st.text_input("Category Name *", placeholder="e.g. Vendor Management")
+            with col2:
+                new_cat_desc = st.text_input("Description", placeholder="Short description of this category")
+            new_cat_order = st.number_input("Display Order", min_value=1, max_value=20,
+                                             value=len(cats)+1 if cats else 1)
+            if st.form_submit_button("➕ Add Category", use_container_width=True):
+                if not new_cat_name:
+                    st.error("Category name is required.")
+                else:
+                    supabase.table("kb_categories").insert({
+                        "name": new_cat_name,
+                        "description": new_cat_desc,
+                        "order_num": new_cat_order
+                    }).execute()
+                    st.success(f"✅ Category '{new_cat_name}' added!")
+                    st.rerun()
+
+    st.markdown("---")
 
     with st.expander("➕ Add New User", expanded=False):
         with st.form("add_user_form", clear_on_submit=True):
