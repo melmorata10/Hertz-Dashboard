@@ -698,6 +698,47 @@ def page_login():
                         st.error("Invalid credentials. Please try again.")
 
 
+def render_recent_uploads_panel():
+    """Right panel — latest submissions by submitted_at, shows submitter name."""
+    st.markdown(
+        "<p style='font-size:10px;font-weight:800;letter-spacing:2px;"
+        "color:#7a90aa;text-transform:uppercase;margin:0 0 14px 0;'>"
+        "🕐 Recently Added</p>",
+        unsafe_allow_html=True
+    )
+    recent = (
+        supabase.table("kb_documents")
+        .select("id, title, submitted_at, kb_categories(name), kb_users!kb_documents_submitted_by_fkey(name)")
+        .eq("status", "approved")
+        .order("submitted_at", desc=True)
+        .limit(8)
+        .execute()
+        .data
+    )
+    if not recent:
+        st.caption("No documents yet.")
+        return
+    for doc in recent:
+        cat_name  = (doc.get("kb_categories") or {}).get("name", "—")
+        icon      = CAT_ICONS.get(cat_name, "📄")
+        submitter = (doc.get("kb_users") or {}).get("name", "Unknown")
+        submitted = (doc.get("submitted_at") or "")[:10] or "—"
+        st.markdown(f"""
+        <div style='border-left:3px solid #FFD700;padding:8px 0 8px 12px;margin-bottom:6px;'>
+            <div style='font-size:13px;font-weight:700;color:#0a1628;line-height:1.3;margin-bottom:3px;'>{doc["title"]}</div>
+            <div style='font-size:11px;color:#8099b8;margin-top:2px;'>
+                {icon} {cat_name}
+            </div>
+            <div style='font-size:11px;color:#a0aec0;margin-top:3px;'>
+                📅 {submitted} &nbsp;·&nbsp; 👤 {submitter}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("Open →", key=f"recent_{doc['id']}", use_container_width=True):
+            st.session_state.kb_selected_doc = doc["id"]
+            st.rerun()
+
+
 def page_knowledge_base():
     render_header("📚 RTA Knowledge Base", "Search for processes, reports, and tool guides")
 
@@ -717,87 +758,92 @@ def page_knowledge_base():
             st.rerun()
         return
 
-    # Category chips
-    categories = get_categories()
-    if categories:
-        st.markdown(
-            "<p style='font-size:10px;font-weight:800;letter-spacing:2px;"
-            "color:#7a90aa;text-transform:uppercase;margin:8px 0 10px 0;'>"
-            "🗂️ Browse by Category</p>",
-            unsafe_allow_html=True
-        )
-        cat_cols = st.columns(len(categories))
-        for i, cat in enumerate(categories):
-            icon      = CAT_ICONS.get(cat["name"], "📄")
-            is_active = st.session_state.kb_category_filter == cat["id"]
-            label     = f"{'✅ ' if is_active else ''}{icon} {cat['name']}"
-            with cat_cols[i]:
-                if st.button(label, key=f"cat_{cat['id']}", use_container_width=True):
-                    if is_active:
-                        st.session_state.kb_category_filter = None
-                    else:
-                        st.session_state.kb_category_filter = cat["id"]
-                        st.session_state.kb_search_query    = ""
-                    st.rerun()
+    # ── Two-column layout: articles left, recent uploads right ───────────
+    left_col, right_col = st.columns([3, 2])
 
-    # Search bar
-    # Use on_change callback for instant search without pressing Enter
-    def _on_search_change():
-        val = st.session_state.get("_kb_search_widget", "")
-        st.session_state.kb_search_query    = val
-        st.session_state.kb_category_filter = None
-
-    st.text_input(
-        "🔍 Search",
-        value=st.session_state.kb_search_query,
-        placeholder="Start typing — results appear after 3 characters...",
-        key="_kb_search_widget",
-        on_change=_on_search_change
-    )
-    search = st.session_state.kb_search_query
-
-    st.markdown("<br>", unsafe_allow_html=True)
-    cat_filter = st.session_state.kb_category_filter
-
-    if cat_filter:
-        cat_name = next((c["name"] for c in categories if c["id"] == cat_filter), "")
-        icon     = CAT_ICONS.get(cat_name, "📄")
-        docs     = get_docs_by_category(cat_filter)
-        st.markdown(
-            f"<p style='font-size:13px;color:#7a90aa;margin-bottom:12px;'>"
-            f"{icon} <b>{cat_name}</b> — <b>{len(docs)}</b> document{'s' if len(docs)!=1 else ''}</p>",
-            unsafe_allow_html=True
-        )
-        if not docs:
-            st.info(f"No documents in {cat_name} yet.")
-        for doc in docs:
-            render_doc_card(doc, "cat")
-
-    elif search.strip():
-        results = search_docs(search.strip())
-        if not results:
-            st.info(f"No results found for '{search}'. Try a different keyword.")
-        else:
+    with left_col:
+        categories = get_categories()
+        if categories:
             st.markdown(
-                f"<p style='font-size:13px;color:#7a90aa;margin-bottom:12px;'>"
-                f"🔍 <b>{len(results)}</b> result{'s' if len(results)!=1 else ''} "
-                f"for <b>\"{search}\"</b> \u2014 click to read</p>",
+                "<p style='font-size:10px;font-weight:800;letter-spacing:2px;"
+                "color:#7a90aa;text-transform:uppercase;margin:0 0 10px 0;'>"
+                "🗂️ Browse by Category</p>",
                 unsafe_allow_html=True
             )
-            for doc in results:
-                render_doc_card(doc, "search")
-    else:
-        docs = get_all_approved()
-        if not docs:
-            st.info("No documents published yet.")
-        else:
+            cat_cols = st.columns(len(categories))
+            for i, cat in enumerate(categories):
+                icon      = CAT_ICONS.get(cat["name"], "📄")
+                is_active = st.session_state.kb_category_filter == cat["id"]
+                label     = f"{'✅ ' if is_active else ''}{icon} {cat['name']}"
+                with cat_cols[i]:
+                    if st.button(label, key=f"cat_{cat['id']}", use_container_width=True):
+                        if is_active:
+                            st.session_state.kb_category_filter = None
+                        else:
+                            st.session_state.kb_category_filter = cat["id"]
+                            st.session_state.kb_search_query    = ""
+                        st.rerun()
+
+        def _on_search_change():
+            val = st.session_state.get("_kb_search_widget", "")
+            st.session_state.kb_search_query    = val
+            st.session_state.kb_category_filter = None
+
+        st.text_input(
+            "🔍 Search",
+            value=st.session_state.kb_search_query,
+            placeholder="Start typing — results appear after 3 characters...",
+            key="_kb_search_widget",
+            on_change=_on_search_change
+        )
+        search     = st.session_state.kb_search_query
+        cat_filter = st.session_state.kb_category_filter
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        if cat_filter:
+            cat_name = next((c["name"] for c in categories if c["id"] == cat_filter), "")
+            icon     = CAT_ICONS.get(cat_name, "📄")
+            docs     = get_docs_by_category(cat_filter)
             st.markdown(
                 f"<p style='font-size:13px;color:#7a90aa;margin-bottom:12px;'>"
-                f"📋 <b>{len(docs)}</b> document{'s' if len(docs)!=1 else ''} — sorted latest first</p>",
+                f"{icon} <b>{cat_name}</b> — <b>{len(docs)}</b> document{'s' if len(docs)!=1 else ''}</p>",
                 unsafe_allow_html=True
             )
+            if not docs:
+                st.info(f"No documents in {cat_name} yet.")
             for doc in docs:
-                render_doc_card(doc, "all")
+                render_doc_card(doc, "cat")
+
+        elif search.strip() and len(search.strip()) >= 3:
+            results = search_docs(search.strip())
+            if not results:
+                st.info(f"No results for '{search}'. Try a different keyword.")
+            else:
+                st.markdown(
+                    f"<p style='font-size:13px;color:#7a90aa;margin-bottom:12px;'>"
+                    f"🔍 <b>{len(results)}</b> result{'s' if len(results)!=1 else ''} "
+                    f"for <b>\"{search}\"</b></p>",
+                    unsafe_allow_html=True
+                )
+                for doc in results:
+                    render_doc_card(doc, "search")
+        else:
+            docs = get_all_approved()
+            if not docs:
+                st.info("No documents published yet.")
+            else:
+                st.markdown(
+                    f"<p style='font-size:13px;color:#7a90aa;margin-bottom:12px;'>"
+                    f"📋 <b>{len(docs)}</b> document{'s' if len(docs)!=1 else ''} — latest first</p>",
+                    unsafe_allow_html=True
+                )
+                for doc in docs:
+                    render_doc_card(doc, "all")
+
+    with right_col:
+        with st.container(border=True):
+            render_recent_uploads_panel()
+
 
 def page_submit_document(user):
     render_header("📤 Submit Document", "Your submission will be reviewed before being published")
