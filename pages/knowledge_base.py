@@ -470,39 +470,68 @@ def get_all_docs_by_status(status):
         .data
     )
 
-def upload_file(file) -> tuple:
-    """Upload file — auto-converts DOCX to PDF."""
-    try:
-        timestamp  = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        file_bytes = file.read()
-        is_docx    = file.name.lower().endswith(".docx")
+def extract_text_from_file(file) -> str:
+    """Extract text content from PDF or DOCX and return as markdown string."""
+    file_bytes = file.read()
+    name = file.name.lower()
+    text_lines = []
 
-        if is_docx:
-            with st.spinner("Converting Word document to PDF..."):
-                pdf_bytes = convert_docx_to_pdf(file_bytes)
-            if pdf_bytes:
-                file_name    = f"{timestamp}_{file.name.replace(' ', '_').replace('.docx', '.pdf')}"
-                content_type = "application/pdf"
-                upload_bytes = pdf_bytes
-                st.success("✅ Word document converted to PDF successfully!")
-            else:
-                # Fallback: upload original DOCX
-                file_name    = f"{timestamp}_{file.name.replace(' ', '_')}"
-                content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                upload_bytes = file_bytes
-        else:
-            file_name    = f"{timestamp}_{file.name.replace(' ', '_')}"
-            content_type = "application/pdf"
-            upload_bytes = file_bytes
+    if name.endswith(".docx"):
+        try:
+            from docx import Document as DocxDocument
+            doc = DocxDocument(BytesIO(file_bytes))
+            for para in doc.paragraphs:
+                t = para.text.strip()
+                if not t:
+                    text_lines.append("")
+                    continue
+                style = para.style.name if para.style else ""
+                if "Heading 1" in style:
+                    text_lines.append(f"## {t}")
+                elif "Heading 2" in style:
+                    text_lines.append(f"### {t}")
+                elif "Heading 3" in style:
+                    text_lines.append(f"#### {t}")
+                elif "List" in style:
+                    text_lines.append(f"- {t}")
+                else:
+                    text_lines.append(t)
+            # Also extract tables
+            for table in doc.tables:
+                rows = []
+                for i, row in enumerate(table.rows):
+                    cells = [c.text.strip() for c in row.cells]
+                    rows.append("| " + " | ".join(cells) + " |")
+                    if i == 0:
+                        rows.append("|" + "|".join(["---"] * len(cells)) + "|")
+                text_lines.extend(rows)
+                text_lines.append("")
+        except Exception as e:
+            return f"⚠️ Could not extract text from Word file: {e}"
 
-        supabase.storage.from_("kb-documents").upload(
-            file_name, upload_bytes, {"content-type": content_type}
-        )
-        file_url = supabase.storage.from_("kb-documents").get_public_url(file_name)
-        return file_url, file_name
-    except Exception as e:
-        st.error(f"File upload failed: {e}")
-        return None, None
+    elif name.endswith(".pdf"):
+        try:
+            import pdfplumber
+            with pdfplumber.open(BytesIO(file_bytes)) as pdf:
+                for page in pdf.pages:
+                    page_text = page.extract_text()
+                    if page_text:
+                        text_lines.extend(page_text.split("\n"))
+                    text_lines.append("")
+        except Exception:
+            try:
+                # fallback: PyPDF2
+                import PyPDF2
+                reader = PyPDF2.PdfReader(BytesIO(file_bytes))
+                for page in reader.pages:
+                    t = page.extract_text()
+                    if t:
+                        text_lines.extend(t.split("\n"))
+                    text_lines.append("")
+            except Exception as e:
+                return f"⚠️ Could not extract text from PDF: {e}"
+
+    return "\n".join(text_lines).strip()
 
 def approve_doc(doc_id, reviewer_id):
     supabase.table("kb_documents").update({
@@ -519,6 +548,9 @@ def reject_doc(doc_id, reviewer_id):
         "reviewed_at": datetime.datetime.now().isoformat(),
         "updated_at":  datetime.datetime.now().isoformat()
     }).eq("id", doc_id).execute()
+
+def delete_doc(doc_id):
+    supabase.table("kb_documents").delete().eq("id", doc_id).execute()
 
 # ─────────────────────────────────────────
 # CATEGORY ICONS
@@ -736,69 +768,75 @@ def page_knowledge_base():
 
         st.markdown("---")
 
-    # ── DEFAULT / FAQ VIEW ────────────────────────────────────────────────
+    # ── DEFAULT VIEW — all docs sorted latest first ───────────────────────
     if not search.strip():
-        st.markdown("<br>", unsafe_allow_html=True)
-
-        # Quick access FAQ cards
-        st.markdown("""
-        <div style="font-size:10px;font-weight:800;letter-spacing:2px;
-                    color:#7a90aa;text-transform:uppercase;margin-bottom:12px;">
-            📌 Quick Reference
-        </div>
-        """, unsafe_allow_html=True)
-
-        recent_docs = get_recent_docs(limit=6)
-
-        if recent_docs:
-            cols = st.columns(3)
-            for i, doc in enumerate(recent_docs):
-                cat_name = (doc.get("kb_categories") or {}).get("name", "—")
-                icon     = CAT_ICONS.get(cat_name, "📄")
-                with cols[i % 3]:
-                    st.markdown(f"""
-                    <div class="faq-card">
-                        <div class="faq-icon">{icon}</div>
-                        <div class="faq-title">{doc['title']}</div>
-                        <div class="faq-cat">{cat_name}</div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    if st.button("Read", key=f"faq_{doc['id']}",
-                                  use_container_width=True):
-                        st.session_state.kb_selected_doc = doc["id"]
-                        st.rerun()
-        else:
-            st.info("No documents published yet.")
-
         # Browse by category chips
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown("""
-        <div style="font-size:10px;font-weight:800;letter-spacing:2px;
-                    color:#7a90aa;text-transform:uppercase;margin-bottom:12px;">
-            🗂️ Browse by Category
-        </div>
-        """, unsafe_allow_html=True)
-
         categories = get_categories()
         if categories:
+            st.markdown(
+                "<p style='font-size:10px;font-weight:800;letter-spacing:2px;"
+                "color:#7a90aa;text-transform:uppercase;margin:8px 0 10px 0;'>"
+                "🗂️ Browse by Category</p>",
+                unsafe_allow_html=True
+            )
             cat_cols = st.columns(len(categories))
             for i, cat in enumerate(categories):
                 icon = CAT_ICONS.get(cat["name"], "📄")
                 with cat_cols[i]:
-                    if st.button(
-                        f"{icon} {cat['name']}",
-                        key=f"cat_browse_{cat['id']}",
-                        use_container_width=True
-                    ):
+                    if st.button(f"{icon} {cat['name']}",
+                                  key=f"cat_browse_{cat['id']}",
+                                  use_container_width=True):
                         st.session_state.kb_search_query = cat["name"]
                         st.rerun()
 
-        st.markdown("""
-        <div style="text-align:center;padding:16px 0 8px 0;
-                    color:#a0aec0;font-size:12px;">
-            💡 Use the search bar above to find specific processes or topics
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # All approved docs, latest first
+        all_docs = (
+            supabase.table("kb_documents")
+            .select("*, kb_categories(name), kb_users!kb_documents_submitted_by_fkey(name)")
+            .eq("status", "approved")
+            .order("reviewed_at", desc=True)
+            .execute()
+            .data
+        )
+
+        if not all_docs:
+            st.info("No documents published yet.")
+        else:
+            st.markdown(
+                f"<p style='font-size:13px;color:#7a90aa;margin-bottom:12px;'>"
+                f"📋 <b>{len(all_docs)}</b> document{'s' if len(all_docs) != 1 else ''} "
+                f"— sorted latest first — click to read</p>",
+                unsafe_allow_html=True
+            )
+            for doc in all_docs:
+                cat_name = (doc.get("kb_categories") or {}).get("name", "—")
+                icon     = CAT_ICONS.get(cat_name, "📄")
+                reviewed = (doc.get("reviewed_at") or "")[:10] or "—"
+                content_preview = (doc.get("content") or "")[:120].replace("\n", " ")
+                if content_preview:
+                    content_preview = content_preview + "..."
+
+                col1, col2 = st.columns([10, 1])
+                with col1:
+                    st.markdown(
+                        f"<div class='search-result-card'>"
+                        f"<div class='search-result-title'>{doc['title']}</div>"
+                        f"<div class='search-result-meta'>"
+                        f"<span class='category-chip'>{icon} {cat_name}</span>"
+                        f"Last updated: {reviewed}"
+                        f"{'<br><span style=\'color:#a0aec0;font-style:italic;font-size:11px;\'>'+content_preview+'</span>' if content_preview else ''}"
+                        f"</div></div>",
+                        unsafe_allow_html=True
+                    )
+                with col2:
+                    st.markdown("<div style='padding-top:8px'></div>",
+                                unsafe_allow_html=True)
+                    if st.button("Read →", key=f"all_{doc['id']}",
+                                  use_container_width=True):
+                        st.session_state.kb_selected_doc = doc["id"]
+                        st.rerun()
 
 
 def page_submit_document(user):
@@ -830,15 +868,19 @@ def page_submit_document(user):
             if not content and not file:
                 st.error("Please add content or upload a file.")
                 return
-            file_url, file_name = None, None
+            final_content = content or ""
             if file:
-                file_url, file_name = upload_file(file)
+                with st.spinner("Extracting content from file..."):
+                    extracted = extract_text_from_file(file)
+                if extracted:
+                    final_content = (final_content + "\n\n" + extracted).strip()
+                    st.success("✅ File content extracted and added to document!")
             supabase.table("kb_documents").insert({
                 "title":        title,
                 "category_id":  cat_map[category],
-                "content":      content,
-                "file_url":     file_url,
-                "file_name":    file_name,
+                "content":      final_content,
+                "file_url":     None,
+                "file_name":    None,
                 "status":       "pending",
                 "submitted_by": user["id"],
                 "notes":        notes,
@@ -894,7 +936,7 @@ def page_review_queue(user):
         for doc in docs:
             cat_name = (doc.get("kb_categories") or {}).get("name", "—")
             with st.container(border=True):
-                col1, col2 = st.columns([4, 1])
+                col1, col2, col3 = st.columns([5, 1, 1])
                 with col1:
                     st.markdown(f"**{doc['title']}**")
                     st.caption(
@@ -905,6 +947,12 @@ def page_review_queue(user):
                     if st.button("🗑️ Unpublish", key=f"unpub_{doc['id']}"):
                         reject_doc(doc["id"], user["id"])
                         st.rerun()
+                with col3:
+                    if user["role"] == "super_admin":
+                        if st.button("❌ Delete", key=f"del_app_{doc['id']}"):
+                            delete_doc(doc["id"])
+                            st.toast("Document permanently deleted.", icon="🗑️")
+                            st.rerun()
 
     with tab_rejected:
         docs = get_all_docs_by_status("rejected")
@@ -913,7 +961,7 @@ def page_review_queue(user):
         for doc in docs:
             cat_name = (doc.get("kb_categories") or {}).get("name", "—")
             with st.container(border=True):
-                col1, col2 = st.columns([4, 1])
+                col1, col2, col3 = st.columns([5, 1, 1])
                 with col1:
                     st.markdown(f"**{doc['title']}**")
                     st.caption(
@@ -924,6 +972,12 @@ def page_review_queue(user):
                     if st.button("↩️ Re-approve", key=f"reapp_{doc['id']}"):
                         approve_doc(doc["id"], user["id"])
                         st.rerun()
+                with col3:
+                    if user["role"] == "super_admin":
+                        if st.button("❌ Delete", key=f"del_rej_{doc['id']}"):
+                            delete_doc(doc["id"])
+                            st.toast("Document permanently deleted.", icon="🗑️")
+                            st.rerun()
 
 
 def page_user_management(user):
@@ -962,20 +1016,34 @@ def page_user_management(user):
     st.subheader("Current Users")
 
     all_users = supabase.table("kb_users").select("*").order("name").execute().data
-    role_labels = {
-        "rta":         "🟦 RTA",
-        "admin":       "🟧 Admin",
-        "super_admin": "🟥 Super Admin"
-    }
+    role_options = ["rta", "admin", "super_admin"]
+
     for u in all_users:
         with st.container(border=True):
-            col1, col2, col3, col4 = st.columns([3, 3, 2, 2])
+            col1, col2, col3, col4, col5 = st.columns([3, 3, 2, 2, 1])
             with col1:
                 st.markdown(f"**{u['name']}**")
-            with col2:
                 st.caption(u["email"])
+            with col2:
+                if u["id"] != user["id"]:
+                    new_role = st.selectbox(
+                        "Role",
+                        options=role_options,
+                        index=role_options.index(u["role"]) if u["role"] in role_options else 0,
+                        key=f"role_{u['id']}",
+                        label_visibility="collapsed"
+                    )
+                    if new_role != u["role"]:
+                        supabase.table("kb_users").update(
+                            {"role": new_role}
+                        ).eq("id", u["id"]).execute()
+                        st.toast(f"Role updated to {new_role}!", icon="✅")
+                        st.rerun()
+                else:
+                    st.caption("super_admin (you)")
             with col3:
-                st.write(role_labels.get(u["role"], u["role"]))
+                status = "🟢 Active" if u["is_active"] else "🔴 Inactive"
+                st.write(status)
             with col4:
                 if u["id"] != user["id"]:
                     label = "Deactivate" if u["is_active"] else "Activate"
@@ -984,8 +1052,13 @@ def page_user_management(user):
                             {"is_active": not u["is_active"]}
                         ).eq("id", u["id"]).execute()
                         st.rerun()
-                else:
-                    st.write("🟢 You")
+            with col5:
+                if u["id"] != user["id"]:
+                    if st.button("🗑️", key=f"del_user_{u['id']}",
+                                  help="Delete user permanently"):
+                        supabase.table("kb_users").delete().eq("id", u["id"]).execute()
+                        st.toast(f"User {u['name']} deleted.", icon="🗑️")
+                        st.rerun()
 
 
 # ─────────────────────────────────────────
