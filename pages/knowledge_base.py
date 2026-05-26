@@ -476,12 +476,40 @@ def get_categories():
     return supabase.table("kb_categories").select("*").order("order_num").execute().data
 
 def search_docs(query):
-    r1 = supabase.table("kb_documents").select("*, kb_categories(name), kb_users!kb_documents_submitted_by_fkey(name)").eq("status","approved").ilike("title",f"%{query}%").order("reviewed_at",desc=True).execute().data
-    r2 = supabase.table("kb_documents").select("*, kb_categories(name), kb_users!kb_documents_submitted_by_fkey(name)").eq("status","approved").ilike("content",f"%{query}%").order("reviewed_at",desc=True).execute().data
+    """Search docs by title and content, ranked by relevance."""
+    q = query.lower().strip()
+    r1 = supabase.table("kb_documents").select("*, kb_categories(name), kb_users!kb_documents_submitted_by_fkey(name)").eq("status","approved").ilike("title",f"%{query}%").execute().data
+    r2 = supabase.table("kb_documents").select("*, kb_categories(name), kb_users!kb_documents_submitted_by_fkey(name)").eq("status","approved").ilike("content",f"%{query}%").execute().data
+
+    # Merge deduped
     seen = set(); merged = []
     for doc in r1 + r2:
         if doc["id"] not in seen:
             seen.add(doc["id"]); merged.append(doc)
+
+    # Score each doc
+    def score(doc):
+        title   = (doc.get("title")   or "").lower()
+        content = (doc.get("content") or "").lower()
+        s = 0
+        # Exact title match = highest
+        if title == q:                        s += 100
+        # Title starts with query
+        elif title.startswith(q):             s += 80
+        # Query is a whole word in title
+        elif f" {q} " in f" {title} ":       s += 60
+        # Query appears anywhere in title
+        elif q in title:                      s += 40
+        # Query in first 200 chars of content (intro/summary)
+        if q in content[:200]:                s += 20
+        # Count occurrences in content (frequency signal)
+        s += min(content.count(q) * 3, 15)
+        # Recency bonus — newer docs rank slightly higher on ties
+        reviewed = doc.get("reviewed_at") or ""
+        s += 5 if reviewed else 0
+        return s
+
+    merged.sort(key=score, reverse=True)
     return merged
 
 def get_docs_by_category(category_id):
