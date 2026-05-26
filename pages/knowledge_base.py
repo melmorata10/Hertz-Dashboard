@@ -436,10 +436,12 @@ def page_login():
 def page_knowledge_base():
     render_header("📚 RTA Knowledge Base", "Search for processes, reports, and tool guides")
 
-    if "kb_search_query" not in st.session_state:
-        st.session_state.kb_search_query = ""
-    if "kb_selected_doc" not in st.session_state:
-        st.session_state.kb_selected_doc = None
+    if "kb_search_query"    not in st.session_state:
+        st.session_state.kb_search_query    = ""
+    if "kb_selected_doc"    not in st.session_state:
+        st.session_state.kb_selected_doc    = None
+    if "kb_category_filter" not in st.session_state:
+        st.session_state.kb_category_filter = None
 
     if st.session_state.kb_selected_doc:
         doc = get_doc_by_id(st.session_state.kb_selected_doc)
@@ -450,7 +452,7 @@ def page_knowledge_base():
             st.rerun()
         return
 
-    # Category filter chips — shown above search
+    # Category chips
     categories = get_categories()
     if categories:
         st.markdown(
@@ -461,40 +463,55 @@ def page_knowledge_base():
         )
         cat_cols = st.columns(len(categories))
         for i, cat in enumerate(categories):
-            icon = CAT_ICONS.get(cat["name"], "📄")
+            icon      = CAT_ICONS.get(cat["name"], "📄")
+            is_active = st.session_state.kb_category_filter == cat["id"]
+            label     = f"{'✅ ' if is_active else ''}{icon} {cat['name']}"
             with cat_cols[i]:
-                if st.button(f"{icon} {cat['name']}", key=f"cat_{cat['id']}",
-                              use_container_width=True):
-                    st.session_state.kb_search_query = cat["name"]
+                if st.button(label, key=f"cat_{cat['id']}", use_container_width=True):
+                    if is_active:
+                        st.session_state.kb_category_filter = None
+                    else:
+                        st.session_state.kb_category_filter = cat["id"]
+                        st.session_state.kb_search_query    = ""
                     st.rerun()
 
-    # Search bar — value driven by session state so category chips work
+    # Search bar
     search = st.text_input(
         "🔍 Search",
         value=st.session_state.kb_search_query,
         placeholder="Type to search... e.g. Chat, Allocation, EOD"
     )
     if search != st.session_state.kb_search_query:
-        st.session_state.kb_search_query = search
+        st.session_state.kb_search_query    = search
+        st.session_state.kb_category_filter = None
         st.rerun()
 
     st.markdown("<br>", unsafe_allow_html=True)
+    cat_filter = st.session_state.kb_category_filter
 
-    if search.strip():
+    if cat_filter:
+        cat_name = next((c["name"] for c in categories if c["id"] == cat_filter), "")
+        icon     = CAT_ICONS.get(cat_name, "📄")
+        docs     = get_docs_by_category(cat_filter)
+        st.markdown(
+            f"<p style='font-size:13px;color:#7a90aa;margin-bottom:12px;'>"
+            f"{icon} <b>{cat_name}</b> — <b>{len(docs)}</b> document{'s' if len(docs)!=1 else ''}</p>",
+            unsafe_allow_html=True
+        )
+        if not docs:
+            st.info(f"No documents in {cat_name} yet.")
+        for doc in docs:
+            render_doc_card(doc, "cat")
+
+    elif search.strip():
         results = search_docs(search.strip())
         if not results:
-            st.markdown(
-                f"<div style='text-align:center;padding:40px;color:#8099b8;'>"
-                f"<div style='font-size:32px;margin-bottom:10px;'>🔍</div>"
-                f"<div style='font-size:16px;font-weight:600;color:#1a3a5c;'>No results for \"{search}\"</div>"
-                f"<div style='font-size:13px;margin-top:6px;'>Try a different keyword</div></div>",
-                unsafe_allow_html=True
-            )
+            st.info(f"No results found for '{search}'. Try a different keyword.")
         else:
             st.markdown(
                 f"<p style='font-size:13px;color:#7a90aa;margin-bottom:12px;'>"
                 f"🔍 <b>{len(results)}</b> result{'s' if len(results)!=1 else ''} "
-                f"for <b>\"{search}\"</b> — click to read</p>",
+                f"for <b>\"{search}\"</b> \u2014 click to read</p>",
                 unsafe_allow_html=True
             )
             for doc in results:
@@ -511,7 +528,6 @@ def page_knowledge_base():
             )
             for doc in docs:
                 render_doc_card(doc, "all")
-
 
 def page_submit_document(user):
     render_header("📤 Submit Document", "Your submission will be reviewed before being published")
