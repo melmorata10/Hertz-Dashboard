@@ -351,18 +351,34 @@ h4 { color:#1a3a5c !important; font-weight:700 !important; border-left:3px solid
 .search-result-meta { font-size:12px; color:#8099b8; }
 .category-chip { display:inline-block; background:rgba(255,215,0,0.12); border:1px solid rgba(255,215,0,0.3); border-radius:20px; padding:3px 12px; font-size:11px; font-weight:700; color:#7a5c00; margin-right:6px; }
 
-/* Card overlay buttons — only hide buttons whose text is exactly "open" */
-button[data-testid="baseButton-secondary"][kind="secondary"] {
-    opacity: 0 !important;
-    height: 4px !important;
-    padding: 0 !important;
-    margin: -6px 0 8px 0 !important;
-    font-size: 0 !important;
-    border: none !important;
-    background: transparent !important;
-    cursor: pointer !important;
-    width: 100% !important;
-    display: block !important;
+/* Card-style buttons — text-left, white bg, bordered */
+section.main div[data-testid="stButton"] button[kind="secondary"] {
+    background: white !important;
+    border: 1px solid rgba(200,215,235,0.8) !important;
+    border-left: 4px solid #FFD700 !important;
+    border-radius: 10px !important;
+    padding: 14px 18px !important;
+    text-align: left !important;
+    white-space: pre-wrap !important;
+    height: auto !important;
+    line-height: 1.6 !important;
+    color: #0a1628 !important;
+    font-weight: 400 !important;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.04) !important;
+    transition: all 0.2s ease !important;
+    margin-bottom: 6px !important;
+    max-width: 560px !important;
+}
+section.main div[data-testid="stButton"] button[kind="secondary"]:hover {
+    border-left-color: #e8b000 !important;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.09) !important;
+    transform: translateX(3px) !important;
+    background: #fafcff !important;
+}
+/* Constrain main content width */
+section.main > div[data-testid="stMainBlockContainer"] > div {
+    max-width: 1100px !important;
+    margin: 0 auto !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -436,39 +452,22 @@ def render_header(title, subtitle=""):
     )
 
 def render_doc_card(doc, btn_key_prefix):
-    cat_name = (doc.get("kb_categories") or {}).get("name","—")
-    icon     = CAT_ICONS.get(cat_name,"📄")
-    reviewed = (doc.get("reviewed_at") or "")[:10] or "—"
-    # Strip markdown from preview
     import re
+    cat_name    = (doc.get("kb_categories") or {}).get("name","—")
+    icon        = CAT_ICONS.get(cat_name,"📄")
+    reviewed    = (doc.get("reviewed_at") or "")[:10] or "—"
     raw_preview = (doc.get("content") or "")[:200]
     raw_preview = re.sub(r"[#]+ *", "", raw_preview)
-    raw_preview = re.sub(r"\*+([^*]+)\*+", r"\1", raw_preview)
-    raw_preview = re.sub(r"\n+", " ", raw_preview).replace("\n", " ").strip()
-    preview = (raw_preview[:130] + "...") if len(raw_preview) > 130 else raw_preview
+    raw_preview = re.sub(r"[*]+([^*]+)[*]+", r"\1", raw_preview)
+    raw_preview = raw_preview.replace("\n", " ").strip()
+    preview     = (raw_preview[:120] + "...") if len(raw_preview) > 120 else raw_preview
 
-    st.markdown(f"""
-    <div class="search-result-card">
-        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;">
-            <div style="flex:1;min-width:0;">
-                <div class="search-result-title">{doc['title']}</div>
-                <div class="search-result-meta" style="margin-top:5px;">
-                    <span class="category-chip">{icon} {cat_name}</span>
-                    Last updated: {reviewed}
-                </div>
-                {"<div style='color:#a0aec0;font-style:italic;font-size:12px;margin-top:6px;line-height:1.5;'>" + preview + "</div>" if preview else ""}
-            </div>
-            <div style="color:#b0c4d8;font-size:18px;padding-top:2px;flex-shrink:0;">›</div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # Full-width transparent clickable button over the card
-    if st.button(
-        "open",
-        key=f"{btn_key_prefix}_{doc['id']}",
-        use_container_width=True,
-    ):
+    label = (
+        f"**{doc['title']}**  \n"
+        f"*{icon} {cat_name} · {reviewed}*"
+        + (f"  \n{preview}" if preview else "")
+    )
+    if st.button(label, key=f"{btn_key_prefix}_{doc['id']}", use_container_width=True):
         st.session_state.kb_selected_doc = doc["id"]
         st.rerun()
 
@@ -733,7 +732,7 @@ def render_recent_uploads_panel():
             </div>
         </div>
         """, unsafe_allow_html=True)
-        if st.button("Open →", key=f"recent_{doc['id']}", use_container_width=True):
+        if st.button(f"→ {doc['title'][:50]}", key=f"recent_{doc['id']}", use_container_width=True):
             st.session_state.kb_selected_doc = doc["id"]
             st.rerun()
 
@@ -880,21 +879,8 @@ def page_knowledge_base():
                     cat_name = (doc.get("kb_categories") or {}).get("name", "—")
                     icon     = CAT_ICONS.get(cat_name, "📄")
                     question = _doc_to_faq_question(doc)
-                    st.markdown(f"""
-                    <div style='background:white;border:1px solid rgba(200,215,235,0.8);
-                                border-left:4px solid #FFD700;border-radius:10px;
-                                padding:14px 18px;margin-bottom:6px;
-                                box-shadow:0 2px 6px rgba(0,0,0,0.04);'>
-                        <div style='font-size:14px;font-weight:700;color:#0a1628;margin-bottom:5px;'>
-                            {question}
-                        </div>
-                        <div style='font-size:11px;color:#8099b8;'>
-                            <span class='category-chip'>{icon} {cat_name}</span>
-                        </div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    if st.button("Read answer →", key=f"faq_{doc['id']}",
-                                  use_container_width=True):
+                    label = f"**{question}**  \n*{icon} {cat_name}*"
+                    if st.button(label, key=f"faq_{doc['id']}", use_container_width=True):
                         st.session_state.kb_selected_doc = doc["id"]
                         st.rerun()
 
