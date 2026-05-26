@@ -239,16 +239,20 @@ section[data-testid="stSidebar"] .stMarkdown h3 {
 }
 section[data-testid="stSidebar"] .stRadio label {
     display:flex !important; align-items:center !important;
-    padding:10px 14px 10px 18px !important; border-radius:10px !important;
+    padding:12px 14px 12px 18px !important; border-radius:10px !important;
     border:1px solid rgba(255,215,0,0.1) !important;
     background:rgba(255,255,255,0.04) !important;
     color:#ccddf8 !important; font-weight:600 !important; font-size:13.5px !important;
     cursor:pointer !important; transition:all 0.22s ease !important;
+    margin:4px 0 !important;
 }
 section[data-testid="stSidebar"] .stRadio label:hover {
     background:rgba(255,215,0,0.09) !important;
     border-color:rgba(255,215,0,0.32) !important;
     transform:translateX(5px) !important;
+}
+section[data-testid="stSidebar"] .stRadio div[role="radiogroup"] {
+    gap:0px !important;
 }
 section[data-testid="stSidebar"] .stButton button {
     background:linear-gradient(135deg,#FFD700 0%,#f5c400 55%,#e8b000 100%) !important;
@@ -297,10 +301,40 @@ hr { border:none !important; height:1px !important; background:linear-gradient(9
 h3 { color:#0a1628 !important; font-weight:800 !important; }
 h4 { color:#1a3a5c !important; font-weight:700 !important; border-left:3px solid #FFD700; padding-left:12px; }
 .stCaption { color:#8099b8 !important; font-size:12px !important; }
-.search-result-card { background:white; border:1px solid rgba(200,215,235,0.8); border-left:4px solid #FFD700; border-radius:10px; padding:14px 18px; margin-bottom:10px; box-shadow:0 2px 8px rgba(0,0,0,0.04); }
+.search-result-card {
+    background:white; border:1px solid rgba(200,215,235,0.8);
+    border-left:4px solid #FFD700; border-radius:10px;
+    padding:14px 18px; margin-bottom:0px;
+    box-shadow:0 2px 8px rgba(0,0,0,0.04);
+    transition:all 0.2s ease;
+}
+.search-result-card:hover {
+    border-left-color:#e8b000;
+    box-shadow:0 4px 18px rgba(0,0,0,0.1);
+    transform:translateX(3px);
+}
 .search-result-title { font-size:15px; font-weight:700; color:#0a1628; margin-bottom:4px; }
 .search-result-meta { font-size:12px; color:#8099b8; }
 .category-chip { display:inline-block; background:rgba(255,215,0,0.12); border:1px solid rgba(255,215,0,0.3); border-radius:20px; padding:3px 12px; font-size:11px; font-weight:700; color:#7a5c00; margin-right:6px; }
+
+/* Make the card button invisible — acts as click overlay */
+div[data-testid="stButton"] > button[kind="secondary"] {
+    background: transparent !important;
+    border: none !important;
+    color: transparent !important;
+    height: 0px !important;
+    padding: 0 !important;
+    margin: 0 0 12px 0 !important;
+    font-size: 0 !important;
+    box-shadow: none !important;
+    cursor: pointer !important;
+    width: 100% !important;
+}
+div[data-testid="stButton"] > button[kind="secondary"]:hover {
+    background: transparent !important;
+    box-shadow: none !important;
+    transform: none !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -376,25 +410,36 @@ def render_doc_card(doc, btn_key_prefix):
     cat_name = (doc.get("kb_categories") or {}).get("name","—")
     icon     = CAT_ICONS.get(cat_name,"📄")
     reviewed = (doc.get("reviewed_at") or "")[:10] or "—"
-    preview  = (doc.get("content") or "")[:120].replace("\n"," ")
+    preview  = (doc.get("content") or "")[:150].replace("\n"," ")
     if preview: preview += "..."
-    col1, col2 = st.columns([10,1])
-    with col1:
-        st.markdown(
-            f"<div class='search-result-card'>"
-            f"<div class='search-result-title'>{doc['title']}</div>"
-            f"<div class='search-result-meta'>"
-            f"<span class='category-chip'>{icon} {cat_name}</span>"
-            f"Last updated: {reviewed}"
-            + (f"<br><span style='color:#a0aec0;font-style:italic;font-size:11px;'>{preview}</span>" if preview else "")
-            + "</div></div>",
-            unsafe_allow_html=True
-        )
-    with col2:
-        st.markdown("<div style='padding-top:8px'></div>", unsafe_allow_html=True)
-        if st.button("Read →", key=f"{btn_key_prefix}_{doc['id']}", use_container_width=True):
-            st.session_state.kb_selected_doc = doc["id"]
-            st.rerun()
+
+    # Whole card is a clickable button
+    st.markdown("""
+    <style>
+    div[data-testid="stButton"] button.card-btn {
+        text-align: left !important;
+        white-space: normal !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    card_html = (
+        f"<div class='search-result-card' style='cursor:pointer;'>"
+        f"<div class='search-result-title'>{doc['title']}</div>"
+        f"<div class='search-result-meta'>"
+        f"<span class='category-chip'>{icon} {cat_name}</span>"
+        f"Last updated: {reviewed}"
+        + (f"<br><span style='color:#a0aec0;font-style:italic;font-size:11px;'>{preview}</span>" if preview else "")
+        + "</div></div>"
+    )
+    st.markdown(card_html, unsafe_allow_html=True)
+
+    # Invisible full-width button overlay
+    if st.button(f"↗ {doc['title']}", key=f"{btn_key_prefix}_{doc['id']}",
+                  use_container_width=True,
+                  help=f"Open: {doc['title']}"):
+        st.session_state.kb_selected_doc = doc["id"]
+        st.rerun()
 
 def render_content(content_text: str):
     """Render article content with clean KB-styled formatting."""
@@ -668,12 +713,14 @@ def page_knowledge_base():
     search = st.text_input(
         "🔍 Search",
         value=st.session_state.kb_search_query,
-        placeholder="Type to search... e.g. Chat, Allocation, EOD"
+        placeholder="Start typing — results appear after 3 characters..."
     )
     if search != st.session_state.kb_search_query:
         st.session_state.kb_search_query    = search
         st.session_state.kb_category_filter = None
-        st.rerun()
+        # Only rerun if cleared or 3+ chars — avoids rerun on every single keypress
+        if len(search) == 0 or len(search) >= 3:
+            st.rerun()
 
     st.markdown("<br>", unsafe_allow_html=True)
     cat_filter = st.session_state.kb_category_filter
