@@ -778,9 +778,23 @@ def _summary_to_tsv(df: pd.DataFrame) -> str:
     return view.to_csv(sep="\t", index=False, na_rep="—")
 
 
-def _summary_to_html_table(df: pd.DataFrame) -> str:
+def _summary_to_html_table(
+    df: pd.DataFrame,
+    show_greeting: bool = True,
+    lob_col_label: str = "LOB",
+    table_key: str = None,
+) -> str:
     """HTML table with inline conditional colours — pastes into Outlook/Word/Excel
-    with green/yellow/red cells preserved, matching the dashboard display."""
+    with green/yellow/red cells preserved, matching the dashboard display.
+
+    Parameters
+    ----------
+    show_greeting   : prepend "Hi Team, See performance below:" (main table only)
+    lob_col_label   : header text for the LOB column (use vendor name for vendor tables)
+    table_key       : session-state key prefix for saved lob_comments lookup
+    """
+    import re as _re
+
     display_cols = [
         "LOB", "NCO", "NCH",
         "Target AHT", "AHT", "AHT Var%",
@@ -821,15 +835,31 @@ def _summary_to_html_table(df: pd.DataFrame) -> str:
         if col in ("Target ASA", "ASA"):               return _fmt_seconds(val)
         if col in ("AHT Var%", "ABN%", "Target ABN%"): return _fmt_pct(val)
         if col in ("NCO", "NCH", "ABN"):               return _fmt_int(val)
-        if col == "Comment / Action":                  return ""
         return str(val) if pd.notna(val) else "—"
+
+    def _get_comment(row) -> str:
+        """Return the saved comment or auto-generated analysis for this row."""
+        lob = str(row.get("LOB", ""))
+        if lob == "Grand Total":
+            return ""
+        # 1. Try the persisted / user-typed comment
+        if table_key:
+            saved = st.session_state.get("lob_comments", {}).get(f"{table_key}:{lob}", "")
+            if saved:
+                return _re.sub(r"\*\*(.+?)\*\*", r"\1", saved)  # strip markdown bold
+        # 2. Fall back to the auto-generated driver brief
+        brief = _abn_driver_brief(row)
+        return _re.sub(r"\*\*(.+?)\*\*", r"\1", brief)
 
     rows_html = []
 
-    # Header row
+    # Header row — replace "LOB" column label with lob_col_label
+    def _col_label(c):
+        return lob_col_label if c == "LOB" else c
+
     ths = "".join(
         f'<th style="background:{HDR_BG};color:white;padding:7px 10px;'
-        f'border:1px solid #888;white-space:nowrap;font-weight:bold">{c}</th>'
+        f'border:1px solid #888;white-space:nowrap;font-weight:bold">{_col_label(c)}</th>'
         for c in data_cols
     )
     rows_html.append(f"<tr>{ths}</tr>")
@@ -840,12 +870,17 @@ def _summary_to_html_table(df: pd.DataFrame) -> str:
         fw       = "bold"   if is_total else "normal"
         tds = []
         for col in data_cols:
-            val = row.get(col, float("nan")) if col != "Comment / Action" else ""
-            bg, fg = _cell_colors(col, val, row) if not is_total else (None, None)
+            if col == "Comment / Action":
+                val     = float("nan")
+                fmt_val = _get_comment(row)
+                bg, fg  = None, None
+            else:
+                val     = row.get(col, float("nan"))
+                bg, fg  = _cell_colors(col, val, row) if not is_total else (None, None)
+                fmt_val = _fmt(col, val)
             cell_bg = bg or base_bg
             cell_fg = fg or "inherit"
             align   = "left" if col in ("LOB", "Comment / Action") else "center"
-            fmt_val = _fmt(col, val)
             tds.append(
                 f'<td style="background:{cell_bg};color:{cell_fg};padding:5px 9px;'
                 f'border:1px solid #ccc;text-align:{align};'
@@ -858,11 +893,11 @@ def _summary_to_html_table(df: pd.DataFrame) -> str:
         + "".join(rows_html)
         + "</table>"
     )
-    return (
-        "<p><strong>Hi Team,</strong></p>"
-        "<p>See performance below:</p>"
-        + table
+    prefix = (
+        "<p><strong>Hi Team,</strong></p><p>See performance below:</p>"
+        if show_greeting else ""
     )
+    return prefix + table
 
 
 # ── Mapping Manager helpers ────────────────────────────────────────────────────
@@ -1225,7 +1260,13 @@ def _display_summary(df: pd.DataFrame, table_key: str = "main"):
             save_comments(st.session_state["lob_comments"])
 
 
-def _copy_email_button(df: pd.DataFrame, key: str) -> None:
+def _copy_email_button(
+    df: pd.DataFrame,
+    key: str,
+    show_greeting: bool = True,
+    lob_col_label: str = "LOB",
+    table_key: str = None,
+) -> None:
     """Render a 'Copy for Email' button.
 
     Clicking it copies the summary table as rich HTML to the clipboard.
@@ -1238,7 +1279,12 @@ def _copy_email_button(df: pd.DataFrame, key: str) -> None:
     """
     import json as _json
 
-    html_content = _summary_to_html_table(df)
+    html_content = _summary_to_html_table(
+        df,
+        show_greeting=show_greeting,
+        lob_col_label=lob_col_label,
+        table_key=table_key,
+    )
     html_js      = _json.dumps(html_content)   # properly escaped JS string literal
     fn           = f"doCopy_{key}"
     bid          = f"copybtn_{key}"
@@ -2073,7 +2119,12 @@ with tab1:
             st.subheader("Performance by Line of Business")
         with copy_col:
             st.markdown("<div style='padding-top:6px'></div>", unsafe_allow_html=True)
-            _copy_email_button(_main_df, "main")
+            _copy_email_button(
+                _main_df, "main",
+                show_greeting=True,
+                lob_col_label="LOB",
+                table_key="main",
+            )
         with btn_col:
             st.markdown("<div style='padding-top:8px'></div>", unsafe_allow_html=True)
             if st.button("⛶", key="fs_main", help="Expand table to full screen", use_container_width=True):
@@ -2130,7 +2181,12 @@ with tab1:
                     st.markdown(f"#### {vendor}")
                 with v_copy:
                     st.markdown("<div style='padding-top:4px'></div>", unsafe_allow_html=True)
-                    _copy_email_button(vdf, f"vendor_{vendor}")
+                    _copy_email_button(
+                        vdf, f"vendor_{vendor}",
+                        show_greeting=False,
+                        lob_col_label=vendor,
+                        table_key=f"vendor_{vendor}",
+                    )
                 with v_btn:
                     st.markdown("<div style='padding-top:6px'></div>", unsafe_allow_html=True)
                     if st.button("⛶", key=f"fs_vendor_{vendor}", help="Expand table to full screen", use_container_width=True):
