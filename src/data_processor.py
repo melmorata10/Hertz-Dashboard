@@ -95,7 +95,11 @@ def _aggregate(df: pd.DataFrame, group_cols: list) -> pd.DataFrame:
     ).reset_index()
 
 
-def _derive_metrics(agg: pd.DataFrame, lob_col: str = "LOB") -> pd.DataFrame:
+def _derive_metrics(
+    agg: pd.DataFrame,
+    lob_col: str = "LOB",
+    custom_targets: dict = None,
+) -> pd.DataFrame:
     df = agg.copy()
     safe_nch = df["NCH"].replace(0, float("nan"))
     safe_nco = df["NCO"].replace(0, float("nan"))
@@ -104,8 +108,10 @@ def _derive_metrics(agg: pd.DataFrame, lob_col: str = "LOB") -> pd.DataFrame:
     df["ASA"]  = (df["ASA_w"] / safe_nch).round(1)
     df["ABN%"] = (df["ABN"]   / safe_nco * 100).round(2)
 
+    _targets = custom_targets if custom_targets is not None else TARGETS
+
     def tgt(lob, key):
-        return TARGETS.get(str(lob), DEFAULT_TARGET)[key]
+        return _targets.get(str(lob), DEFAULT_TARGET)[key]
 
     df["Target AHT"]  = df[lob_col].map(lambda l: tgt(l, "aht"))
     df["Target ASA"]  = df[lob_col].map(lambda l: tgt(l, "asa"))
@@ -115,12 +121,24 @@ def _derive_metrics(agg: pd.DataFrame, lob_col: str = "LOB") -> pd.DataFrame:
     return df.drop(columns=["AHT_w", "ASA_w"])
 
 
-def prepare(raw: pd.DataFrame, custom_mapping: dict = None) -> tuple[pd.DataFrame, pd.DataFrame]:
+def prepare(
+    raw: pd.DataFrame,
+    custom_mapping: dict = None,
+    custom_targets: dict = None,
+) -> tuple[pd.DataFrame, dict, pd.DataFrame]:
     """
-    Returns (summary_df, interval_df).
+    Returns (summary_df, vendor_summaries, interval_df).
 
-    summary_df  — one row per LOB + Grand Total row
-    interval_df — one row per (LOB, Vendor, 30-min interval)
+    summary_df       — one row per LOB + Grand Total row
+    vendor_summaries — dict of {vendor: summary_df}
+    interval_df      — one row per (LOB, Vendor, 30-min interval)
+
+    Parameters
+    ----------
+    custom_mapping : dict | None
+        Override skill→LOB+Vendor mapping. None = use built-in.
+    custom_targets : dict | None
+        Override per-LOB targets {lob: {"aht", "asa", "abn"}}. None = use built-in.
     """
     _EMPTY_COLS = [
         "LOB", "NCO", "NCH", "Target AHT", "AHT", "AHT Var%",
@@ -172,7 +190,10 @@ def prepare(raw: pd.DataFrame, custom_mapping: dict = None) -> tuple[pd.DataFram
 
     # ── Helper: build summary with grand total for any subset of rows ──────────
     def _make_summary(sub: pd.DataFrame) -> pd.DataFrame:
-        agg = _derive_metrics(_aggregate(sub, ["LOB"]))
+        agg = _derive_metrics(
+            _aggregate(sub, ["LOB"]),
+            custom_targets=custom_targets,
+        )
         order = {lob: i for i, lob in enumerate(LOB_DISPLAY_ORDER)}
         agg["_sort"] = agg["LOB"].map(lambda l: order.get(l, 999))
         agg = agg.sort_values("_sort").drop(columns=["_sort"]).reset_index(drop=True)
@@ -209,7 +230,10 @@ def prepare(raw: pd.DataFrame, custom_mapping: dict = None) -> tuple[pd.DataFram
             vendor_summaries[vendor] = _make_summary(sub)
 
     # ── Interval (by LOB + Vendor + 30-min slot) ──────────────────────────────
-    interval = _derive_metrics(_aggregate(df, ["LOB", "Vendor", "Interval30"]))
+    interval = _derive_metrics(
+        _aggregate(df, ["LOB", "Vendor", "Interval30"]),
+        custom_targets=custom_targets,
+    )
     if pd.api.types.is_datetime64_any_dtype(interval["Interval30"]):
         interval["Interval30"] = interval["Interval30"].dt.strftime("%H:%M")
     interval["Interval30"] = interval["Interval30"].fillna("N/A").astype(str)

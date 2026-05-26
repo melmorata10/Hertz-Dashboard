@@ -21,6 +21,7 @@ _LOCK = threading.Lock()          # guard concurrent reads/writes
 _COMMENTS_FILE   = _DATA_DIR / "lob_comments.json"
 _MAPPING_FILE    = _DATA_DIR / "custom_mapping.json"
 _MAPPING_DF_FILE = _DATA_DIR / "mapping_df.json"
+_TARGETS_FILE    = _DATA_DIR / "custom_targets.json"
 
 
 def _ensure_dir() -> None:
@@ -102,3 +103,33 @@ def clear_custom_mapping() -> None:
     with _LOCK:
         _MAPPING_FILE.unlink(missing_ok=True)
         _MAPPING_DF_FILE.unlink(missing_ok=True)
+
+
+# ── Custom targets ─────────────────────────────────────────────────────────────
+
+def load_targets() -> dict | None:
+    """Return saved custom targets dict, or None if not set.
+
+    Format: {lob: {"aht": float, "asa": float, "abn": float (ratio 0–1)}}
+    """
+    try:
+        data = json.loads(_TARGETS_FILE.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else None
+    except Exception:
+        return None
+
+
+def save_targets(targets: dict) -> None:
+    """Persist the custom targets dict to disk."""
+    _ensure_dir()
+    with _LOCK:
+        _TARGETS_FILE.write_text(
+            json.dumps(targets, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+
+def clear_targets() -> None:
+    """Remove persisted targets (revert to built-in)."""
+    with _LOCK:
+        _TARGETS_FILE.unlink(missing_ok=True)

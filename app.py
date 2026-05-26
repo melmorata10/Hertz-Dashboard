@@ -7,11 +7,12 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from src.data_processor import prepare
-from src.mapping import SKILL_TO_LOB as _BUILTIN_MAPPING, LOB_DISPLAY_ORDER as _LOB_ORDER
+from src.mapping import SKILL_TO_LOB as _BUILTIN_MAPPING, LOB_DISPLAY_ORDER as _LOB_ORDER, TARGETS as _BUILTIN_TARGETS
 from src.persistence import (
     load_comments, save_comments, clear_comments,
     load_custom_mapping, save_custom_mapping,
     load_mapping_df, save_mapping_df, clear_custom_mapping,
+    load_targets, save_targets, clear_targets,
 )
 
 # SharePoint connector
@@ -47,6 +48,11 @@ if "mapping_df" not in st.session_state:
     _persisted_df = load_mapping_df()
     if _persisted_df is not None:
         st.session_state["mapping_df"] = _persisted_df
+
+if "custom_targets" not in st.session_state:
+    _persisted_targets = load_targets()
+    if _persisted_targets is not None:
+        st.session_state["custom_targets"] = _persisted_targets
 
 # Move sidebar logo above nav links + rename "app" nav label
 components.html("""
@@ -963,6 +969,94 @@ def _import_from_tableau(file, current_df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(merged_rows, columns=["Skill ID", "Queue Name", "LOB", "Vendor"])
 
 
+# ── Targets Manager helpers ────────────────────────────────────────────────────
+
+def _targets_to_df(targets: dict) -> pd.DataFrame:
+    """Convert a TARGETS-style dict to an editable DataFrame.
+    ABN is stored internally as a ratio; displayed as % for readability.
+    """
+    from src.mapping import LOB_DISPLAY_ORDER as _order
+    rows = []
+    # Display in LOB order, then any extras
+    ordered = list(_order) + [l for l in targets if l not in _order]
+    for lob in ordered:
+        if lob not in targets:
+            continue
+        t = targets[lob]
+        rows.append({
+            "LOB":            lob,
+            "Target AHT (s)": int(t.get("aht", 400)),
+            "Target ASA (s)": int(t.get("asa", 30)),
+            "Target ABN%":    round(t.get("abn", 0.05) * 100, 2),
+        })
+    return pd.DataFrame(rows, columns=["LOB", "Target AHT (s)", "Target ASA (s)", "Target ABN%"])
+
+
+def _df_to_targets(df: pd.DataFrame) -> dict:
+    """Convert the editable targets DataFrame back to the internal dict format."""
+    targets = {}
+    for _, row in df.iterrows():
+        lob = str(row.get("LOB", "")).strip()
+        if not lob or lob.lower() in ("nan", "none", ""):
+            continue
+        try:
+            targets[lob] = {
+                "aht": float(row.get("Target AHT (s)", 400)),
+                "asa": float(row.get("Target ASA (s)", 30)),
+                "abn": round(float(row.get("Target ABN%", 5)) / 100, 4),
+            }
+        except (ValueError, TypeError):
+            continue
+    return targets
+
+
+def _get_targets_df() -> pd.DataFrame:
+    """Return the working targets DataFrame, seeding from built-in on first use."""
+    if "targets_df" not in st.session_state:
+        active = st.session_state.get("custom_targets") or _BUILTIN_TARGETS
+        st.session_state["targets_df"] = _targets_to_df(active)
+    return st.session_state["targets_df"]
+
+
+def _parse_targets_upload(file) -> dict:
+    """Parse an Excel or CSV file into a targets dict.
+
+    Expected columns (case-insensitive): LOB, AHT, ASA, ABN (or ABN%)
+    ABN may be stored as ratio (0.03) or percentage (3) — auto-detected.
+    """
+    fname = getattr(file, "name", "").lower()
+    if fname.endswith((".xlsx", ".xls")):
+        df = pd.read_excel(file)
+    else:
+        df = pd.read_csv(file)
+    df.columns = [str(c).strip() for c in df.columns]
+    cols_l = {c.lower(): c for c in df.columns}
+
+    lob_col = next((cols_l[k] for k in cols_l if k in ("lob", "line of business")), None)
+    aht_col = next((cols_l[k] for k in cols_l if "aht" in k), None)
+    asa_col = next((cols_l[k] for k in cols_l if "asa" in k), None)
+    abn_col = next((cols_l[k] for k in cols_l if "abn" in k), None)
+
+    if not lob_col:
+        raise ValueError(f"No LOB column found. Columns: {list(df.columns)}")
+
+    targets = {}
+    for _, row in df.iterrows():
+        lob = str(row.get(lob_col, "")).strip()
+        if not lob or lob.lower() in ("nan", "none", ""):
+            continue
+        aht = float(row[aht_col]) if aht_col and pd.notna(row.get(aht_col)) else 400
+        asa = float(row[asa_col]) if asa_col and pd.notna(row.get(asa_col)) else 30
+        abn_raw = float(row[abn_col]) if abn_col and pd.notna(row.get(abn_col)) else 5
+        # Auto-detect: if ABN ≥ 1 assume it's already a percentage, divide by 100
+        abn_ratio = abn_raw / 100 if abn_raw >= 1 else abn_raw
+        targets[lob] = {"aht": aht, "asa": asa, "abn": round(abn_ratio, 4)}
+
+    if not targets:
+        raise ValueError("No valid LOB rows found in the uploaded file.")
+    return targets
+
+
 _COL_WIDTHS = {
     "LOB":         160,
     "NCO":          80,
@@ -1702,8 +1796,11 @@ if data_source == "📁 Upload CSV":
                     call_date = pd.to_datetime(raw["CallDate"], errors="coerce").max().strftime("%m/%d/%Y")
                 except Exception:
                     call_date = None
-            _active_mapping = st.session_state.get("custom_mapping")  # None → use built-in
-            summary_df, vendor_summaries, interval_df = prepare(raw, custom_mapping=_active_mapping)
+            _active_mapping  = st.session_state.get("custom_mapping")   # None → use built-in
+            _active_targets  = st.session_state.get("custom_targets")   # None → use built-in
+            summary_df, vendor_summaries, interval_df = prepare(
+                raw, custom_mapping=_active_mapping, custom_targets=_active_targets
+            )
             data_ok = True
         else:
             st.warning("No data could be read from the stored files.")
@@ -1737,9 +1834,10 @@ else:  # SharePoint
                     )
                 except Exception:
                     call_date = None
-            _active_mapping = st.session_state.get("custom_mapping")
+            _active_mapping  = st.session_state.get("custom_mapping")
+            _active_targets  = st.session_state.get("custom_targets")
             summary_df, vendor_summaries, interval_df = prepare(
-                _raw_sp, custom_mapping=_active_mapping
+                _raw_sp, custom_mapping=_active_mapping, custom_targets=_active_targets
             )
             data_ok = True
         elif _raw_sp is not None:
@@ -1865,10 +1963,11 @@ if data_ok:
         unsafe_allow_html=True,
     )
 
-tab1, tab2, tab3 = st.tabs([
+tab1, tab2, tab3, tab4 = st.tabs([
     "📊 Voice Performance Summary",
     "⏱️ Per Interval",
     "🗺️ Mapping Manager",
+    "🎯 Targets Editor",
 ])
 
 # ── Tab 1: Voice Performance Summary ─────────────────────────────────────────
@@ -2129,3 +2228,125 @@ with tab3:
             )
             st.caption("**Skills per LOB (current edits)**")
             st.dataframe(_grp, hide_index=True, use_container_width=True, height=180)
+
+# ── Tab 4: Targets Editor ─────────────────────────────────────────────────────
+with tab4:
+    st.subheader("Performance Targets by LOB")
+    st.caption(
+        "Edit AHT, ASA, and Abandon Rate targets per Line of Business. "
+        "Click **💾 Apply** to activate — all users and all calculations update instantly. "
+        "Click **↩️ Reset** to revert to the built-in targets."
+    )
+
+    # ── Status banner ─────────────────────────────────────────────────────────
+    _ct = st.session_state.get("custom_targets")
+    if _ct:
+        st.success(f"✅ **Custom targets active** — {len(_ct):,} LOBs defined")
+    else:
+        st.info(f"ℹ️ **Built-in targets active** — {len(_BUILTIN_TARGETS):,} LOBs")
+
+    st.markdown("---")
+
+    # ── Upload targets file ───────────────────────────────────────────────────
+    with st.expander("📥 Upload targets from Excel / CSV", expanded=False):
+        st.markdown(
+            "Upload a file with columns **LOB**, **AHT** (seconds), **ASA** (seconds), "
+            "and **ABN%** (abandon rate — either as ratio like `0.03` or percentage like `3`). "
+            "The upload replaces all targets; unmapped LOBs fall back to the built-in default."
+        )
+        _tgt_file = st.file_uploader(
+            "Upload targets file",
+            type=["xlsx", "xls", "csv"],
+            key="targets_file_upload",
+            label_visibility="collapsed",
+        )
+        if _tgt_file:
+            try:
+                _uploaded_targets = _parse_targets_upload(_tgt_file)
+                st.session_state["custom_targets"] = _uploaded_targets
+                st.session_state["targets_df"]     = _targets_to_df(_uploaded_targets)
+                save_targets(_uploaded_targets)
+                st.success(f"✅ Loaded targets for {len(_uploaded_targets):,} LOBs. Click **💾 Apply** to confirm.")
+                st.rerun()
+            except Exception as _te:
+                st.error(f"Could not parse file: {_te}")
+
+    st.markdown("---")
+
+    # ── Editable targets table ────────────────────────────────────────────────
+    _tdf = _get_targets_df()
+
+    _tgt_col_cfg = {
+        "LOB": st.column_config.TextColumn("LOB", width=200),
+        "Target AHT (s)": st.column_config.NumberColumn(
+            "Target AHT (s)", min_value=0, max_value=3600, step=1, width=130,
+            help="Average Handle Time target in seconds.",
+        ),
+        "Target ASA (s)": st.column_config.NumberColumn(
+            "Target ASA (s)", min_value=0, max_value=3600, step=1, width=130,
+            help="Average Speed to Answer target in seconds.",
+        ),
+        "Target ABN%": st.column_config.NumberColumn(
+            "Target ABN%", min_value=0.0, max_value=100.0, step=0.1,
+            format="%.1f%%", width=130,
+            help="Abandon Rate target as a percentage (e.g. 3.0 = 3%).",
+        ),
+    }
+
+    _tgt_h = min(700, max(300, len(_tdf) * 36 + 40))
+
+    st.caption(
+        f"**{len(_tdf):,} LOBs** · "
+        "Double-click any cell to edit · "
+        "AHT & ASA in seconds · "
+        "ABN% as a percentage (e.g. 3.0 = 3%)"
+    )
+
+    _edited_tgt = st.data_editor(
+        _tdf,
+        column_config=_tgt_col_cfg,
+        num_rows="dynamic",
+        hide_index=True,
+        use_container_width=True,
+        height=_tgt_h,
+        key="targets_data_editor",
+    )
+
+    st.markdown("---")
+
+    # ── Apply / Reset ─────────────────────────────────────────────────────────
+    _ta_col, _tr_col, _ts_col = st.columns([2, 1, 3])
+
+    with _ta_col:
+        if st.button("💾 Apply as Active Targets", type="primary", use_container_width=True):
+            _new_targets = _df_to_targets(_edited_tgt)
+            if _new_targets:
+                st.session_state["custom_targets"] = _new_targets
+                st.session_state["targets_df"]     = _edited_tgt.copy()
+                save_targets(_new_targets)
+                st.success(f"✅ Targets applied — {len(_new_targets):,} LOBs active for all users.")
+                st.rerun()
+            else:
+                st.error("No valid targets found — check your edits.")
+
+    with _tr_col:
+        if st.button("↩️ Reset to Built-in", use_container_width=True, key="reset_targets_btn"):
+            st.session_state.pop("custom_targets", None)
+            st.session_state.pop("targets_df",     None)
+            clear_targets()
+            st.rerun()
+
+    with _ts_col:
+        # Preview: current targets as a quick-reference table
+        if not _edited_tgt.empty:
+            st.caption("**Current targets preview**")
+            st.dataframe(
+                _edited_tgt.style.format({
+                    "Target AHT (s)": "{:.0f}s",
+                    "Target ASA (s)": "{:.0f}s",
+                    "Target ABN%":    "{:.1f}%",
+                }),
+                hide_index=True,
+                use_container_width=True,
+                height=200,
+            )
