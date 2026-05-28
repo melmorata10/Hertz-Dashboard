@@ -795,6 +795,11 @@ def _summary_to_html_table(
     """
     import re as _re
 
+    # ── Sort: NCO descending, Grand Total pinned last (mirrors _display_summary) ──
+    _gt   = df[df["LOB"] == "Grand Total"]
+    _lobs = df[df["LOB"] != "Grand Total"].sort_values("NCO", ascending=False)
+    df    = pd.concat([_lobs, _gt], ignore_index=True)
+
     display_cols = [
         "LOB", "NCO", "NCH",
         "Target AHT", "AHT", "AHT Var%",
@@ -803,7 +808,8 @@ def _summary_to_html_table(
     ]
     data_cols = [c for c in display_cols if c in df.columns or c == "Comment / Action"]
 
-    HDR_BG    = "#1a3a5c"
+    # Mid-tone blue — readable in Outlook light mode, still clearly a header
+    HDR_BG    = "#2e75b6"
     TOTAL_BG  = "#cce8e8"
     GREEN_BG  = "#C8F0C8"; GREEN_FG  = "#1a5e1a"
     YELLOW_BG = "#FFF4CC"; YELLOW_FG = "#7a5c00"
