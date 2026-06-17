@@ -12,7 +12,7 @@ from src.persistence import (
     load_comments, save_comments, clear_comments,
     load_custom_mapping, save_custom_mapping,
     load_mapping_df, save_mapping_df, clear_custom_mapping,
-    load_targets, save_targets, clear_targets,
+    load_targets, save_targets, clear_targets, load_targets_mtime,
 )
 
 # SharePoint connector
@@ -49,10 +49,20 @@ if "mapping_df" not in st.session_state:
     if _persisted_df is not None:
         st.session_state["mapping_df"] = _persisted_df
 
-if "custom_targets" not in st.session_state:
+# Live-sync targets: on every rerun, check if the disk file is newer than what
+# this session last loaded.  If so, reload — this means a change saved by any
+# other RTA is picked up automatically without a browser refresh.
+_disk_targets_mtime = load_targets_mtime()
+if _disk_targets_mtime != st.session_state.get("_targets_mtime", -1.0):
     _persisted_targets = load_targets()
+    st.session_state["_targets_mtime"] = _disk_targets_mtime
     if _persisted_targets is not None:
         st.session_state["custom_targets"] = _persisted_targets
+    else:
+        # File was deleted (Reset clicked by someone else) — revert to built-in
+        st.session_state.pop("custom_targets", None)
+    # Drop cached editor df so it re-seeds from the freshly loaded targets
+    st.session_state.pop("targets_df", None)
 
 # Move sidebar logo above nav links + rename "app" nav label
 components.html("""
@@ -907,7 +917,7 @@ def _summary_to_html_table(
 
 
 # ── Mapping Manager helpers ────────────────────────────────────────────────────
-_VENDOR_OPTIONS = ["TELUS", "VXI", "IGT", "HERTZ", "Other"]
+_VENDOR_OPTIONS = ["TELUS", "VXI", "ATAIN", "HERTZ", "Other"]
 _LOB_OPTIONS    = list(_LOB_ORDER) + ["Unknown"]
 
 
@@ -2168,7 +2178,7 @@ with tab1:
         if vendor_summaries:
             st.markdown("---")
             st.subheader("Performance by Vendor / Supplier")
-            vendor_order = ["TELUS", "VXI", "IGT", "HERTZ"]
+            vendor_order = ["TELUS", "VXI", "ATAIN", "HERTZ"]
             vendors_to_show = [v for v in vendor_order if v in vendor_summaries]
             vendors_to_show += [v for v in vendor_summaries if v not in vendor_order]
             for vendor in vendors_to_show:

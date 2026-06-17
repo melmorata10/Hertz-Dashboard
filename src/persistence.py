@@ -133,3 +133,15 @@ def clear_targets() -> None:
     """Remove persisted targets (revert to built-in)."""
     with _LOCK:
         _TARGETS_FILE.unlink(missing_ok=True)
+
+
+def load_targets_mtime() -> float:
+    """Return the file-modification time of the targets file, or 0.0 if absent.
+
+    Used by app.py to detect when another session has saved new targets so the
+    current session can live-reload without requiring a browser refresh.
+    """
+    try:
+        return _TARGETS_FILE.stat().st_mtime
+    except Exception:
+        return 0.0
