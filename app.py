@@ -2335,6 +2335,32 @@ with tab3:
 
     _map_h = min(600, max(300, len(_mdf) * 36 + 40))
 
+    # ── Search bar ────────────────────────────────────────────────────────────
+    _search_query = st.text_input(
+        "🔍 Search skills",
+        placeholder="Type a Skill ID or Queue Name to check if it's mapped…",
+        key="mapping_search",
+        label_visibility="collapsed",
+    )
+
+    if _search_query.strip():
+        _q = _search_query.strip().lower()
+        _match = _mdf[
+            _mdf["Skill ID"].astype(str).str.lower().str.contains(_q, na=False) |
+            _mdf["Queue Name"].astype(str).str.lower().str.contains(_q, na=False)
+        ]
+        if _match.empty:
+            st.error(f"❌ No match found for **{_search_query}** — this skill is not in the mapping yet.")
+        else:
+            st.success(f"✅ **{len(_match):,} match{'es' if len(_match) != 1 else ''}** found for **{_search_query}**")
+            st.dataframe(
+                _match.reset_index(drop=True),
+                use_container_width=True,
+                hide_index=True,
+                height=min(300, (len(_match) + 1) * 36 + 4),
+            )
+        st.markdown("---")
+
     st.caption(
         f"**{len(_mdf):,} entries** · "
         "Double-click any cell to edit · "
