@@ -42,6 +42,15 @@ if "lob_comments" not in st.session_state:
 if "custom_mapping" not in st.session_state:
     _persisted_mapping = load_custom_mapping()
     if _persisted_mapping is not None:
+        # Auto-sync: push any new or changed built-in entries into the saved mapping
+        # so newly added LOBs / remapped skills are reflected without a manual Reset.
+        _cm_changed = False
+        for _k, _v in _BUILTIN_MAPPING.items():
+            if _persisted_mapping.get(_k) != _v:
+                _persisted_mapping[_k] = _v
+                _cm_changed = True
+        if _cm_changed:
+            save_custom_mapping(_persisted_mapping)
         st.session_state["custom_mapping"] = _persisted_mapping
 
 if "mapping_df" not in st.session_state:
@@ -957,6 +966,31 @@ def _get_mapping_df() -> pd.DataFrame:
     seeding from the built-in mapping on first use."""
     if "mapping_df" not in st.session_state:
         st.session_state["mapping_df"] = _mapping_to_df(_BUILTIN_MAPPING)
+        return st.session_state["mapping_df"]
+
+    # Auto-sync once per session: update LOBs/Vendors and append new entries from built-in.
+    if not st.session_state.get("_mapping_df_synced"):
+        _mdf = st.session_state["mapping_df"].copy()
+        _builtin_df = _mapping_to_df(_BUILTIN_MAPPING)
+        _bl = {str(r["Queue Name"]).strip(): (str(r["LOB"]), str(r["Vendor"]))
+               for _, r in _builtin_df.iterrows()}
+        _qns = _mdf["Queue Name"].astype(str).str.strip()
+        # Update LOB/Vendor for rows that exist in built-in
+        for i, qn in _qns.items():
+            if qn in _bl:
+                _mdf.at[i, "LOB"]    = _bl[qn][0]
+                _mdf.at[i, "Vendor"] = _bl[qn][1]
+        # Append built-in entries not yet in the df
+        _existing = set(_qns)
+        _new_rows = _builtin_df[
+            ~_builtin_df["Queue Name"].astype(str).str.strip().isin(_existing)
+        ]
+        if not _new_rows.empty:
+            _mdf = pd.concat([_mdf, _new_rows], ignore_index=True)
+        st.session_state["mapping_df"] = _mdf
+        save_mapping_df(_mdf)
+        st.session_state["_mapping_df_synced"] = True
+
     return st.session_state["mapping_df"]
 
 
@@ -1066,6 +1100,27 @@ def _get_targets_df() -> pd.DataFrame:
     if "targets_df" not in st.session_state:
         active = st.session_state.get("custom_targets") or _BUILTIN_TARGETS
         st.session_state["targets_df"] = _targets_to_df(active)
+
+    # Auto-sync: add new built-in LOBs missing from the targets df
+    if not st.session_state.get("_targets_df_synced"):
+        _tdf = st.session_state["targets_df"]
+        _existing_lobs = set(_tdf["LOB"].astype(str).str.strip())
+        _new_lob_rows = [
+            {"LOB": lob,
+             "Target AHT (s)": int(t.get("aht", 400)),
+             "Target ASA (s)": int(t.get("asa", 30)),
+             "Target ABN%":    round(t.get("abn", 0.05) * 100, 2)}
+            for lob, t in _BUILTIN_TARGETS.items()
+            if lob not in _existing_lobs
+        ]
+        if _new_lob_rows:
+            _tdf = pd.concat([_tdf, pd.DataFrame(_new_lob_rows)], ignore_index=True)
+            st.session_state["targets_df"] = _tdf
+            _ct = _df_to_targets(_tdf)
+            st.session_state["custom_targets"] = _ct
+            save_targets(_ct)
+        st.session_state["_targets_df_synced"] = True
+
     return st.session_state["targets_df"]
 
 
