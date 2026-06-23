@@ -7,6 +7,11 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from src.data_processor import prepare
+from src.excel_export import (
+    build_asa_report_workbook,
+    default_filename as _asa_report_filename,
+    REPORT_LOB_SHEETS as _ASA_LOB_SHEETS,
+)
 from src.mapping import SKILL_TO_LOB as _BUILTIN_MAPPING, LOB_DISPLAY_ORDER as _LOB_ORDER, TARGETS as _BUILTIN_TARGETS
 from src.persistence import (
     load_comments, save_comments, clear_comments,
@@ -2167,11 +2172,12 @@ if data_ok:
         unsafe_allow_html=True,
     )
 
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📊 Voice Performance Summary",
     "⏱️ Per Interval",
     "🗺️ Mapping Manager",
     "🎯 Targets Editor",
+    "📑 ASA Report Export",
 ])
 
 # ── Tab 1: Voice Performance Summary ─────────────────────────────────────────
@@ -2595,4 +2601,38 @@ with tab4:
                 hide_index=True,
                 use_container_width=True,
                 height=200,
+            )
+
+# ── Tab 5: ASA Report Export ──────────────────────────────────────────────────
+with tab5:
+    st.subheader("Daily ASA Report")
+    st.caption(
+        "Generates the stakeholder ASA Report workbook — one sheet per Line of Business "
+        "with an NCO vs ASA chart, an ASA Per Vendor chart, and an auto-written analysis — "
+        "built from the same data currently loaded on this dashboard."
+    )
+
+    if not data_ok or interval_df.empty:
+        st.info("⬆️ Load data from the sidebar first to generate the report.")
+    else:
+        _covered = [lob for lob in _ASA_LOB_SHEETS.values() if lob in set(interval_df["LOB"])]
+        st.markdown(
+            f"**Sheets included:** {', '.join(_ASA_LOB_SHEETS.keys())}  \n"
+            f"**LOBs with data today:** {len(_covered)} / {len(_ASA_LOB_SHEETS)}"
+        )
+
+        if st.button("📑 Generate Excel Report", type="primary"):
+            with st.spinner("Building workbook…"):
+                _xlsx_bytes = build_asa_report_workbook(interval_df, call_date)
+            st.session_state["asa_report_bytes"] = _xlsx_bytes
+            st.session_state["asa_report_name"] = _asa_report_filename(call_date)
+            st.success("✅ Report generated — download below.")
+
+        if "asa_report_bytes" in st.session_state:
+            st.download_button(
+                "⬇️ Download ASA Report (.xlsx)",
+                data=st.session_state["asa_report_bytes"],
+                file_name=st.session_state["asa_report_name"],
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
             )
