@@ -16,7 +16,7 @@ from src.mapping import SKILL_TO_LOB as _BUILTIN_MAPPING, LOB_DISPLAY_ORDER as _
 from src.persistence import (
     load_comments, save_comments, clear_comments,
     load_custom_mapping, save_custom_mapping,
-    load_mapping_df, save_mapping_df, clear_custom_mapping,
+    load_mapping_df, save_mapping_df,
     load_targets, save_targets, clear_targets, load_targets_mtime,
 )
 
@@ -973,27 +973,19 @@ def _get_mapping_df() -> pd.DataFrame:
         st.session_state["mapping_df"] = _mapping_to_df(_BUILTIN_MAPPING)
         return st.session_state["mapping_df"]
 
-    # Auto-sync once per session: update LOBs/Vendors and append new entries from built-in.
+    # Auto-sync once per session: append any new built-in skills not yet in the df.
+    # Existing rows are never overwritten, so RTA edits to LOB/Vendor are preserved.
     if not st.session_state.get("_mapping_df_synced"):
         _mdf = st.session_state["mapping_df"].copy()
         _builtin_df = _mapping_to_df(_BUILTIN_MAPPING)
-        _bl = {str(r["Queue Name"]).strip(): (str(r["LOB"]), str(r["Vendor"]))
-               for _, r in _builtin_df.iterrows()}
-        _qns = _mdf["Queue Name"].astype(str).str.strip()
-        # Update LOB/Vendor for rows that exist in built-in
-        for i, qn in _qns.items():
-            if qn in _bl:
-                _mdf.at[i, "LOB"]    = _bl[qn][0]
-                _mdf.at[i, "Vendor"] = _bl[qn][1]
-        # Append built-in entries not yet in the df
-        _existing = set(_qns)
+        _existing = set(_mdf["Queue Name"].astype(str).str.strip())
         _new_rows = _builtin_df[
             ~_builtin_df["Queue Name"].astype(str).str.strip().isin(_existing)
         ]
         if not _new_rows.empty:
             _mdf = pd.concat([_mdf, _new_rows], ignore_index=True)
-        st.session_state["mapping_df"] = _mdf
-        save_mapping_df(_mdf)
+            st.session_state["mapping_df"] = _mdf
+            save_mapping_df(_mdf)
         st.session_state["_mapping_df_synced"] = True
 
     return st.session_state["mapping_df"]
@@ -2321,8 +2313,7 @@ with tab3:
     st.subheader("Skill → LOB Mapping")
     st.caption(
         "Edit the mapping below to control how each skill queue is assigned to a Line of Business "
-        "and Vendor. Click **💾 Apply** to make it the active mapping for all report calculations. "
-        "Click **↩️ Reset** to revert to the built-in defaults."
+        "and Vendor. Click **💾 Apply** to make it the active mapping for all report calculations."
     )
 
     # ── Status banner ─────────────────────────────────────────────────────────
@@ -2367,9 +2358,17 @@ with tab3:
     st.markdown("---")
 
     # ── Editable mapping table ─────────────────────────────────────────────────
-    _mdf = _get_mapping_df()
+    _mdf = _get_mapping_df().reset_index(drop=True)
+    _mdf_numbered = _mdf.copy()
+    _mdf_numbered.insert(0, "#", range(1, len(_mdf_numbered) + 1))
 
     _map_col_cfg = {
+        "#": st.column_config.NumberColumn(
+            "#",
+            width=50,
+            disabled=True,
+            help="Row number — for locating entries only, not saved.",
+        ),
         "Skill ID": st.column_config.TextColumn(
             "Skill ID",
             width=120,
@@ -2394,7 +2393,7 @@ with tab3:
         ),
     }
 
-    _map_h = min(600, max(300, len(_mdf) * 36 + 40))
+    _map_h = min(600, max(300, len(_mdf_numbered) * 36 + 40))
 
     # ── Search bar ────────────────────────────────────────────────────────────
     _search_query = st.text_input(
@@ -2406,16 +2405,16 @@ with tab3:
 
     if _search_query.strip():
         _q = _search_query.strip().lower()
-        _match = _mdf[
-            _mdf["Skill ID"].astype(str).str.lower().str.contains(_q, na=False) |
-            _mdf["Queue Name"].astype(str).str.lower().str.contains(_q, na=False)
+        _match = _mdf_numbered[
+            _mdf_numbered["Skill ID"].astype(str).str.lower().str.contains(_q, na=False) |
+            _mdf_numbered["Queue Name"].astype(str).str.lower().str.contains(_q, na=False)
         ]
         if _match.empty:
             st.error(f"❌ No match found for **{_search_query}** — this skill is not in the mapping yet.")
         else:
-            st.success(f"✅ **{len(_match):,} match{'es' if len(_match) != 1 else ''}** found for **{_search_query}**")
+            st.success(f"✅ **{len(_match):,} match{'es' if len(_match) != 1 else ''}** found for **{_search_query}** — use the **#** to find it in the table below")
             st.dataframe(
-                _match.reset_index(drop=True),
+                _match,
                 use_container_width=True,
                 hide_index=True,
                 height=min(300, (len(_match) + 1) * 36 + 4),
@@ -2429,8 +2428,8 @@ with tab3:
         "Click **💾 Apply** when done"
     )
 
-    _edited_map = st.data_editor(
-        _mdf,
+    _edited_map_raw = st.data_editor(
+        _mdf_numbered,
         column_config=_map_col_cfg,
         num_rows="dynamic",        # enables ➕ add-row button at bottom
         hide_index=True,
@@ -2438,6 +2437,7 @@ with tab3:
         height=_map_h,
         key="mapping_data_editor",
     )
+    _edited_map = _edited_map_raw.drop(columns=["#"], errors="ignore")
 
     # ── LOB coverage summary ───────────────────────────────────────────────────
     if not _edited_map.empty:
@@ -2447,8 +2447,8 @@ with tab3:
 
     st.markdown("---")
 
-    # ── Apply / Reset / Group-by summary ──────────────────────────────────────
-    _act_col, _rst_col, _sum_col = st.columns([2, 1, 3])
+    # ── Apply / Group-by summary ───────────────────────────────────────────────
+    _act_col, _sum_col = st.columns([1, 3])
 
     with _act_col:
         if st.button("💾 Apply as Active Mapping", type="primary", use_container_width=True):
@@ -2459,13 +2459,6 @@ with tab3:
             save_mapping_df(_edited_map)
             _n = len(st.session_state["custom_mapping"])
             st.success(f"✅ Mapping applied — {_n:,} entries active for all users.")
-            st.rerun()
-
-    with _rst_col:
-        if st.button("↩️ Reset to Built-in", use_container_width=True):
-            st.session_state.pop("mapping_df",     None)
-            st.session_state.pop("custom_mapping", None)
-            clear_custom_mapping()   # wipe disk too
             st.rerun()
 
     with _sum_col:

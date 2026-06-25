@@ -98,13 +98,6 @@ def save_mapping_df(df: pd.DataFrame) -> None:
         )
 
 
-def clear_custom_mapping() -> None:
-    """Remove persisted mapping (revert to built-in)."""
-    with _LOCK:
-        _MAPPING_FILE.unlink(missing_ok=True)
-        _MAPPING_DF_FILE.unlink(missing_ok=True)
-
-
 # ── Custom targets ─────────────────────────────────────────────────────────────
 
 def load_targets() -> dict | None:
