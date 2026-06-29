@@ -2421,12 +2421,25 @@ with tab3:
             )
         st.markdown("---")
 
-    st.caption(
-        f"**{len(_mdf):,} entries** · "
-        "Double-click any cell to edit · "
-        "Use the ➕ row at the bottom to add new entries · "
-        "Click **💾 Apply** when done"
-    )
+    _cap_col, _dl_col = st.columns([4, 1])
+    with _cap_col:
+        st.caption(
+            f"**{len(_mdf):,} entries** · "
+            "Double-click any cell to edit · "
+            "Use the ➕ row at the bottom to add new entries · "
+            "Click **💾 Apply** when done"
+        )
+    with _dl_col:
+        _mapping_xl_buf = io.BytesIO()
+        with pd.ExcelWriter(_mapping_xl_buf, engine="openpyxl") as _xl_writer:
+            _mdf.to_excel(_xl_writer, index=False, sheet_name="Mapping")
+        st.download_button(
+            "⬇️ Download Excel",
+            data=_mapping_xl_buf.getvalue(),
+            file_name=f"skill_lob_mapping_{datetime.now().strftime('%Y%m%d')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True,
+        )
 
     _edited_map_raw = st.data_editor(
         _mdf_numbered,
