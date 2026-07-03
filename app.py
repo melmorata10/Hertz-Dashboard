@@ -6,6 +6,7 @@ import plotly.graph_objects as go
 import streamlit as st
 import streamlit.components.v1 as components
 
+from src.agent_aht import parse_agent_aht, agent_aht_pivot, site_aht_pivot
 from src.data_processor import prepare
 from src.excel_export import (
     build_asa_report_workbook,
@@ -2164,12 +2165,13 @@ if data_ok:
         unsafe_allow_html=True,
     )
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📊 Voice Performance Summary",
     "⏱️ Per Interval",
     "🗺️ Mapping Manager",
     "🎯 Targets Editor",
     "📑 ASA Report Export",
+    "🧑‍💼 Agent AHT",
 ])
 
 # ── Tab 1: Voice Performance Summary ─────────────────────────────────────────
@@ -2642,3 +2644,73 @@ with tab5:
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
             )
+
+# ── Tab 6: Agent AHT ──────────────────────────────────────────────────────────
+with tab6:
+    st.subheader("Agent AHT")
+    st.caption(
+        "Upload the **Roadside AHT** export (CSV) to view Average Handle Time per agent, "
+        "per date and per site — *Roadside PH = Philippines · Roadside = Lubbock, US*. "
+        "AHT is in seconds, weighted by handled calls; rows with no recorded AHT are excluded."
+    )
+
+    _aht_file = st.file_uploader(
+        "Upload Roadside AHT CSV", type=["csv"], key="agent_aht_upload"
+    )
+
+    if _aht_file is None:
+        st.info("⬆️ Upload the Roadside AHT CSV to see the agent-level view.")
+    else:
+        _aht_df = None
+        try:
+            _aht_df = parse_agent_aht(_aht_file)
+        except Exception as _aht_err:
+            st.error(f"Could not read the file: {_aht_err}")
+
+        if _aht_df is not None and _aht_df.empty:
+            st.warning("No usable rows found — every row is excluded or has zero handled calls.")
+        elif _aht_df is not None:
+            _aht_sites = sorted(_aht_df["Site"].unique())
+            _aht_dates = sorted(_aht_df["Date"].unique())
+
+            _aht_f1, _aht_f2 = st.columns([2, 3])
+            with _aht_f1:
+                _aht_site_sel = st.multiselect(
+                    "Site", _aht_sites, default=_aht_sites, key="agent_aht_sites"
+                )
+            with _aht_f2:
+                _aht_date_sel = st.multiselect(
+                    "Date", _aht_dates, default=_aht_dates,
+                    format_func=lambda d: d.strftime("%b %d, %Y"),
+                    key="agent_aht_dates",
+                )
+
+            _aht_sel = _aht_df[
+                _aht_df["Site"].isin(_aht_site_sel) & _aht_df["Date"].isin(_aht_date_sel)
+            ]
+            if _aht_sel.empty:
+                st.warning("No data for the selected filters.")
+            else:
+                st.markdown("#### AHT by Site")
+                st.dataframe(
+                    site_aht_pivot(_aht_sel),
+                    use_container_width=True, hide_index=True,
+                )
+
+                st.markdown("#### AHT per Agent")
+                _aht_agents = agent_aht_pivot(_aht_sel)
+                st.caption(
+                    f"{len(_aht_agents)} agents · click a column header to sort · "
+                    "**Overall AHT** is weighted across the selected dates"
+                )
+                st.dataframe(
+                    _aht_agents,
+                    use_container_width=True, hide_index=True,
+                    height=min(38 * (len(_aht_agents) + 1) + 4, 620),
+                )
+                st.download_button(
+                    "⬇️ Download Agent AHT (.csv)",
+                    data=_aht_agents.to_csv(index=False).encode("utf-8-sig"),
+                    file_name="agent_aht.csv",
+                    mime="text/csv",
+                )
