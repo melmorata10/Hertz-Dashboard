@@ -6,7 +6,12 @@ import plotly.graph_objects as go
 import streamlit as st
 import streamlit.components.v1 as components
 
-from src.agent_aht import parse_agent_aht, agent_aht_pivot, site_aht_pivot
+from src.agent_aht import (
+    parse_agent_aht, agent_aht_pivot, site_aht_pivot,
+    aht_table_html as _aht_table_html,
+    build_agent_aht_workbook,
+    report_filename as _aht_report_filename,
+)
 from src.data_processor import prepare
 from src.excel_export import (
     build_asa_report_workbook,
@@ -1336,11 +1341,25 @@ def _copy_email_button(
     lob_col_label: str = "LOB",
     table_key: str = None,
 ) -> None:
-    """Render a 'Copy for Email' button.
+    """Render a 'Copy for Email' button for a KPI summary table.
 
     Clicking it copies the summary table as rich HTML to the clipboard.
     Green / yellow / red cell colours are preserved when pasting into
     Outlook, Gmail, Word, or any HTML-aware email client.
+    """
+    _copy_html_button(
+        _summary_to_html_table(
+            df,
+            show_greeting=show_greeting,
+            lob_col_label=lob_col_label,
+            table_key=table_key,
+        ),
+        key,
+    )
+
+
+def _copy_html_button(html_content: str, key: str) -> None:
+    """Render a button that copies the given rich HTML to the clipboard.
 
     Uses document.execCommand('copy') on a selected hidden div — this
     works inside Streamlit's sandboxed iframe (the newer Clipboard API
@@ -1348,12 +1367,6 @@ def _copy_email_button(
     """
     import json as _json
 
-    html_content = _summary_to_html_table(
-        df,
-        show_greeting=show_greeting,
-        lob_col_label=lob_col_label,
-        table_key=table_key,
-    )
     html_js      = _json.dumps(html_content)   # properly escaped JS string literal
     fn           = f"doCopy_{key}"
     bid          = f"copybtn_{key}"
@@ -2693,14 +2706,62 @@ with tab6:
             if _aht_sel.empty:
                 st.warning("No data for the selected filters.")
             else:
-                st.markdown("#### AHT by Site")
+                _aht_sites_view = site_aht_pivot(_aht_sel)
+                _aht_agents = agent_aht_pivot(_aht_sel)
+
+                # ── AHT by Site ────────────────────────────────────────────
+                _s_hdr, _s_copy = st.columns([8, 2])
+                with _s_hdr:
+                    st.markdown("#### AHT by Site")
+                with _s_copy:
+                    _copy_html_button(
+                        _aht_table_html(_aht_sites_view, "AHT by Site"),
+                        "aht_site",
+                    )
                 st.dataframe(
-                    site_aht_pivot(_aht_sel),
+                    _aht_sites_view,
                     use_container_width=True, hide_index=True,
                 )
 
-                st.markdown("#### AHT per Agent")
-                _aht_agents = agent_aht_pivot(_aht_sel)
+                # ── AHT comparison chart ───────────────────────────────────
+                _aht_trend = (
+                    _aht_sel.groupby(["Site", "Date"], as_index=False)
+                    .agg(Handled=("Handled", "sum"), HandleTime=("HandleTime", "sum"))
+                )
+                _aht_trend["AHT"] = (_aht_trend["HandleTime"] / _aht_trend["Handled"]).round(1)
+                _aht_x_order = [d.strftime("%b %d") for d in sorted(_aht_trend["Date"].unique())]
+                _aht_palette = ["#1D4675", "#E4A11B", "#4C9F70", "#C0504D"]
+                _aht_fig = go.Figure()
+                for _aht_i, _aht_site in enumerate(sorted(_aht_trend["Site"].unique())):
+                    _aht_sd = _aht_trend[_aht_trend["Site"] == _aht_site].sort_values("Date")
+                    _aht_fig.add_trace(go.Bar(
+                        x=[d.strftime("%b %d") for d in _aht_sd["Date"]],
+                        y=_aht_sd["AHT"],
+                        name=_aht_site,
+                        text=[f"{v:,.0f}" for v in _aht_sd["AHT"]],
+                        textposition="outside",
+                        marker_color=_aht_palette[_aht_i % len(_aht_palette)],
+                    ))
+                _aht_fig.update_layout(
+                    barmode="group",
+                    title="AHT Comparison by Site",
+                    yaxis_title="AHT (seconds)",
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                    height=380,
+                    margin=dict(l=40, r=20, t=70, b=40),
+                )
+                _aht_fig.update_xaxes(categoryorder="array", categoryarray=_aht_x_order)
+                st.plotly_chart(_aht_fig, use_container_width=True)
+
+                # ── AHT per Agent ──────────────────────────────────────────
+                _a_hdr, _a_copy = st.columns([8, 2])
+                with _a_hdr:
+                    st.markdown("#### AHT per Agent")
+                with _a_copy:
+                    _copy_html_button(
+                        _aht_table_html(_aht_agents, "AHT per Agent"),
+                        "aht_agents",
+                    )
                 st.caption(
                     f"{len(_aht_agents)} agents · click a column header to sort · "
                     "**Overall AHT** is weighted across the selected dates"
@@ -2716,3 +2777,27 @@ with tab6:
                     file_name="agent_aht.csv",
                     mime="text/csv",
                 )
+
+                # ── Excel report ───────────────────────────────────────────
+                st.markdown("---")
+                st.markdown("#### Excel Report")
+                st.caption(
+                    "Generates a workbook with the site summary, the AHT comparison "
+                    "chart, and the full per-agent view — built from the filters above."
+                )
+                if st.button("📑 Generate Excel Report", type="primary", key="agent_aht_xlsx_btn"):
+                    with st.spinner("Building workbook…"):
+                        st.session_state["agent_aht_xlsx"] = build_agent_aht_workbook(
+                            _aht_sites_view, _aht_agents
+                        )
+                        st.session_state["agent_aht_xlsx_name"] = _aht_report_filename(_aht_date_sel)
+                    st.success("✅ Report generated — download below.")
+
+                if "agent_aht_xlsx" in st.session_state:
+                    st.download_button(
+                        "⬇️ Download Agent AHT Report (.xlsx)",
+                        data=st.session_state["agent_aht_xlsx"],
+                        file_name=st.session_state["agent_aht_xlsx_name"],
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True,
+                    )
