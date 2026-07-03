@@ -2709,6 +2709,38 @@ with tab6:
                 _aht_sites_view = site_aht_pivot(_aht_sel)
                 _aht_agents = agent_aht_pivot(_aht_sel)
 
+                # ── AHT comparison chart ───────────────────────────────────
+                _aht_trend = (
+                    _aht_sel.groupby(["Site", "Date"], as_index=False)
+                    .agg(Handled=("Handled", "sum"), HandleTime=("HandleTime", "sum"))
+                )
+                _aht_trend["AHT"] = (_aht_trend["HandleTime"] / _aht_trend["Handled"]).round(1)
+                _aht_x_order = [d.strftime("%b %d") for d in sorted(_aht_trend["Date"].unique())]
+                _aht_palette = ["#1D4675", "#E4A11B", "#4C9F70", "#C0504D"]
+                _aht_fig = go.Figure()
+                for _aht_i, _aht_site in enumerate(sorted(_aht_trend["Site"].unique())):
+                    _aht_sd = _aht_trend[_aht_trend["Site"] == _aht_site].sort_values("Date")
+                    _aht_color = _aht_palette[_aht_i % len(_aht_palette)]
+                    _aht_fig.add_trace(go.Scatter(
+                        x=[d.strftime("%b %d") for d in _aht_sd["Date"]],
+                        y=_aht_sd["AHT"],
+                        name=_aht_site,
+                        mode="lines+markers+text",
+                        text=[f"{v:,.0f}" for v in _aht_sd["AHT"]],
+                        textposition="top center",
+                        line=dict(color=_aht_color, width=3),
+                        marker=dict(color=_aht_color, size=9),
+                    ))
+                _aht_fig.update_layout(
+                    title="AHT Comparison by Site",
+                    yaxis_title="AHT (seconds)",
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                    height=380,
+                    margin=dict(l=40, r=20, t=70, b=40),
+                )
+                _aht_fig.update_xaxes(categoryorder="array", categoryarray=_aht_x_order)
+                st.plotly_chart(_aht_fig, use_container_width=True)
+
                 # ── AHT by Site ────────────────────────────────────────────
                 _s_hdr, _s_copy = st.columns([8, 2])
                 with _s_hdr:
@@ -2722,36 +2754,6 @@ with tab6:
                     _aht_sites_view,
                     use_container_width=True, hide_index=True,
                 )
-
-                # ── AHT comparison chart ───────────────────────────────────
-                _aht_trend = (
-                    _aht_sel.groupby(["Site", "Date"], as_index=False)
-                    .agg(Handled=("Handled", "sum"), HandleTime=("HandleTime", "sum"))
-                )
-                _aht_trend["AHT"] = (_aht_trend["HandleTime"] / _aht_trend["Handled"]).round(1)
-                _aht_x_order = [d.strftime("%b %d") for d in sorted(_aht_trend["Date"].unique())]
-                _aht_palette = ["#1D4675", "#E4A11B", "#4C9F70", "#C0504D"]
-                _aht_fig = go.Figure()
-                for _aht_i, _aht_site in enumerate(sorted(_aht_trend["Site"].unique())):
-                    _aht_sd = _aht_trend[_aht_trend["Site"] == _aht_site].sort_values("Date")
-                    _aht_fig.add_trace(go.Bar(
-                        x=[d.strftime("%b %d") for d in _aht_sd["Date"]],
-                        y=_aht_sd["AHT"],
-                        name=_aht_site,
-                        text=[f"{v:,.0f}" for v in _aht_sd["AHT"]],
-                        textposition="outside",
-                        marker_color=_aht_palette[_aht_i % len(_aht_palette)],
-                    ))
-                _aht_fig.update_layout(
-                    barmode="group",
-                    title="AHT Comparison by Site",
-                    yaxis_title="AHT (seconds)",
-                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                    height=380,
-                    margin=dict(l=40, r=20, t=70, b=40),
-                )
-                _aht_fig.update_xaxes(categoryorder="array", categoryarray=_aht_x_order)
-                st.plotly_chart(_aht_fig, use_container_width=True)
 
                 # ── AHT per Agent ──────────────────────────────────────────
                 _a_hdr, _a_copy = st.columns([8, 2])
