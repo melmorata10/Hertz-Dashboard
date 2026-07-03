@@ -2654,16 +2654,18 @@ with tab6:
         "AHT is in seconds, weighted by handled calls; rows with no recorded AHT are excluded."
     )
 
-    _aht_file = st.file_uploader(
-        "Upload Roadside AHT CSV", type=["csv"], key="agent_aht_upload"
+    _aht_files = st.file_uploader(
+        "Upload Roadside AHT CSV(s)", type=["csv"], key="agent_aht_upload",
+        accept_multiple_files=True,
+        help="You can drop several exports at once — overlapping rows are counted only once.",
     )
 
-    if _aht_file is None:
-        st.info("⬆️ Upload the Roadside AHT CSV to see the agent-level view.")
+    if not _aht_files:
+        st.info("⬆️ Upload one or more Roadside AHT CSVs to see the agent-level view.")
     else:
         _aht_df = None
         try:
-            _aht_df = parse_agent_aht(_aht_file)
+            _aht_df = parse_agent_aht(_aht_files)
         except Exception as _aht_err:
             st.error(f"Could not read the file: {_aht_err}")
 

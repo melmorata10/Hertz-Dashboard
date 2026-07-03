@@ -14,20 +14,30 @@ SITE_MAP = {
 _REQUIRED = ["AgentName", "LineOfBusiness", "CallDate", "AHT-Inbound", "Handled", "No AHT"]
 
 
-def parse_agent_aht(file) -> pd.DataFrame:
-    """Read the Roadside AHT CSV into tidy rows: Site / Agent / Date / Handled / HandleTime.
+def parse_agent_aht(files) -> pd.DataFrame:
+    """Read one or more Roadside AHT CSVs into tidy rows: Site / Agent / Date / Handled / HandleTime.
 
-    Rows flagged "Exclude" in the "No AHT" column carry no inbound AHT and are
-    dropped, as are rows with zero handled calls.
+    Accepts a single file or a list of files; identical rows appearing in more
+    than one upload (overlapping exports) are counted once. Rows flagged
+    "Exclude" in the "No AHT" column carry no inbound AHT and are dropped, as
+    are rows with zero handled calls.
     """
-    df = pd.read_csv(file)
-    df.columns = df.columns.str.strip()
-    missing = [c for c in _REQUIRED if c not in df.columns]
-    if missing:
-        raise ValueError(
-            "This doesn't look like a Roadside AHT export — missing column(s): "
-            + ", ".join(missing)
-        )
+    if not isinstance(files, (list, tuple)):
+        files = [files]
+
+    frames = []
+    for f in files:
+        raw = pd.read_csv(f)
+        raw.columns = raw.columns.str.strip()
+        missing = [c for c in _REQUIRED if c not in raw.columns]
+        if missing:
+            raise ValueError(
+                f"{getattr(f, 'name', 'File')} doesn't look like a Roadside AHT export — "
+                "missing column(s): " + ", ".join(missing)
+            )
+        frames.append(raw)
+
+    df = pd.concat(frames, ignore_index=True).drop_duplicates()
 
     df = df[df["No AHT"].astype(str).str.strip().str.lower() == "include"].copy()
     df["Handled"] = pd.to_numeric(df["Handled"], errors="coerce").fillna(0)
