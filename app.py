@@ -18,10 +18,10 @@ from src.daily_forecast import (
     SITE_RENAME as _FC_SITE_RENAME,
 )
 from src.exception_rules import (
-    RULE_TYPES as _RULE_TYPES,
-    RULE_COLUMNS as _RULE_COLUMNS,
+    RULE_TYPE_RENAME as _RULE_RENAME,
     DEFAULT_RULES as _DEFAULT_RULES,
-    clean_rules as _clean_rules,
+    parse_rules_text as _parse_rules_text,
+    rules_to_text as _rules_to_text,
     apply_to_mapping as _rules_apply_to_mapping,
     apply_to_forecast_df as _rules_apply_to_forecast,
     build_forecast_lob_map as _rules_forecast_lob_map,
@@ -89,10 +89,15 @@ if "mapping_df" not in st.session_state:
 
 if "exception_rules" not in st.session_state:
     _persisted_rules = load_exception_rules()
-    st.session_state["exception_rules"] = (
-        _persisted_rules if _persisted_rules is not None
-        else [dict(r) for r in _DEFAULT_RULES]
-    )
+    if _persisted_rules is None:
+        _seed_rules = [dict(r) for r in _DEFAULT_RULES]
+        st.session_state["exception_rules"] = _seed_rules
+        st.session_state["exception_rules_text"] = _rules_to_text(_seed_rules)
+    else:
+        st.session_state["exception_rules"] = _persisted_rules["rules"]
+        st.session_state["exception_rules_text"] = (
+            _persisted_rules.get("text") or _rules_to_text(_persisted_rules["rules"])
+        )
 
 # Live-sync targets: on every rerun, check if the disk file is newer than what
 # this session last loaded.  If so, reload — this means a change saved by any
@@ -3145,65 +3150,70 @@ with tab7:
 with tab8:
     st.subheader("Exception / Convention Rules")
     st.caption(
-        "Teach the dashboard your naming conventions — rules are saved for **all users** "
-        "and applied everywhere (summary tables, forecast columns, Daily Forecast tab). "
-        "Two rule types:  \n"
-        "• **Rename LOB** — every occurrence of **From** (in the skill mapping or the "
-        "forecast workbook) is treated and shown as **To**. "
-        "Example: *CSCC → Billing/Disputes*.  \n"
-        "• **Forecast → LOB link** — the forecast workbook column **From** counts toward "
-        "the dashboard LOB **To** when computing Forecast Volume / Forecast Variance. "
-        "Example: *CUSTOMER SPECIAL SERVICES DEPARTMENT → International*."
+        "Write your naming conventions as plain text — **one rule per line** — and "
+        "click Apply. Whatever the dashboard understands is applied everywhere "
+        "(summary tables, forecast columns, Daily Forecast tab) for **all users**; "
+        "lines it can't understand are listed and skipped. Lines starting with `#` "
+        "are comments.  \n"
+        "Examples it understands:  \n"
+        "• `CSCC in Forecast and Mapping needs to be labeled Billing/Disputes` "
+        "*(rename a label everywhere)*  \n"
+        "• `CSSD in mapping is CUSTOMER SPECIAL SERVICES DEPARTMENT in Forecast` "
+        "*(link a forecast column to a LOB)*  \n"
+        "• Short forms too: `label CSCC as Billing/Disputes` · "
+        "`forecast CSSD counts toward International` · `CSCC = Billing/Disputes`"
     )
-
-    _rules_list = st.session_state.get("exception_rules", [])
-    _rules_df = pd.DataFrame(_rules_list, columns=_RULE_COLUMNS) if _rules_list \
-        else pd.DataFrame(columns=_RULE_COLUMNS)
 
     _rules_rev = st.session_state.setdefault("exception_rules_rev", 0)
-    _rules_edited = st.data_editor(
-        _rules_df,
-        column_config={
-            "Rule Type": st.column_config.SelectboxColumn(
-                "Rule Type", options=_RULE_TYPES, width=180, required=True,
-            ),
-            "From": st.column_config.TextColumn(
-                "From", width=300,
-                help="Label as it appears in the source (mapping LOB or forecast column)",
-            ),
-            "To": st.column_config.TextColumn(
-                "To", width=220,
-                help="Label / LOB the dashboard should use instead",
-            ),
-            "Notes": st.column_config.TextColumn("Notes", width=340),
-        },
-        num_rows="dynamic",
-        hide_index=True,
-        use_container_width=True,
-        key=f"exception_rules_editor_{_rules_rev}",
+    _rules_text_val = st.text_area(
+        "Rules",
+        value=st.session_state.get("exception_rules_text", ""),
+        height=220,
+        key=f"exception_rules_text_area_{_rules_rev}",
+        label_visibility="collapsed",
+        placeholder="One rule per line, e.g.\nCSCC in Forecast and Mapping needs to be labeled Billing/Disputes",
     )
+
+    # Live interpretation of what's currently typed (applied only on Apply)
+    _rules_preview, _rules_bad = _parse_rules_text(_rules_text_val)
+    if _rules_preview:
+        st.markdown("**How the dashboard reads this:**")
+        for _r in _rules_preview:
+            if _r["Rule Type"] == _RULE_RENAME:
+                st.markdown(f"- 🔁 **{_r['From']}** is shown as **{_r['To']}** everywhere")
+            else:
+                st.markdown(
+                    f"- 🔗 forecast column **{_r['From']}** counts toward LOB **{_r['To']}**"
+                )
+    if _rules_bad:
+        st.warning(
+            "These lines were **not understood** and will be skipped:  \n"
+            + "  \n".join(f"• {l}" for l in _rules_bad)
+        )
 
     _r_apply, _r_reset, _r_info = st.columns([1, 1, 3])
     with _r_apply:
         if st.button("💾 Apply Rules", type="primary", use_container_width=True,
                      key="rules_apply_btn"):
-            _new_rules = _clean_rules(_rules_edited.to_dict("records"))
-            st.session_state["exception_rules"] = _new_rules
-            save_exception_rules(_new_rules)
-            st.session_state["exception_rules_rev"] += 1
+            st.session_state["exception_rules"] = _rules_preview
+            st.session_state["exception_rules_text"] = _rules_text_val
+            save_exception_rules(_rules_text_val, _rules_preview)
             st.rerun()
     with _r_reset:
         if st.button("↩️ Reset to defaults", use_container_width=True,
                      key="rules_reset_btn"):
             _def_rules = [dict(r) for r in _DEFAULT_RULES]
+            _def_text = _rules_to_text(_def_rules)
             st.session_state["exception_rules"] = _def_rules
-            save_exception_rules(_def_rules)
+            st.session_state["exception_rules_text"] = _def_text
+            save_exception_rules(_def_text, _def_rules)
             st.session_state["exception_rules_rev"] += 1
             st.rerun()
     with _r_info:
-        _n_ren = sum(1 for r in _rules_list if r.get("Rule Type") == _RULE_TYPES[0])
+        _active_rules = st.session_state.get("exception_rules", [])
+        _n_ren = sum(1 for r in _active_rules if r.get("Rule Type") == _RULE_RENAME)
         st.caption(
-            f"**{len(_rules_list)} rule(s) active** — {_n_ren} rename, "
-            f"{len(_rules_list) - _n_ren} forecast link. "
-            "Use the ➕ row to add a rule; incomplete rows (blank From/To) are ignored."
+            f"**{len(_active_rules)} rule(s) currently active** — {_n_ren} rename, "
+            f"{len(_active_rules) - _n_ren} forecast link. Edits above take effect "
+            "when you click Apply."
         )

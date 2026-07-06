@@ -1,13 +1,16 @@
 """User-editable exception / convention rules (Exception Rules tab).
 
-Rules are a list of dicts with keys: Rule Type / From / To / Notes.
-They are persisted server-side (shared by all users) and applied:
+Users write rules as plain text, one per line; the parser turns each line
+into a dict with keys Rule Type / From / To / Notes. Rules are persisted
+server-side (shared by all users) and applied:
 
 • "Rename LOB" — every occurrence of the *From* label, whether it comes from
   the skill mapping or a forecast column, is treated and displayed as *To*.
 • "Forecast → LOB link" — the forecast workbook column *From* counts toward
   the dashboard LOB *To* when computing Forecast Volume / Forecast Variance.
 """
+
+import re
 
 import pandas as pd
 
@@ -52,6 +55,110 @@ DEFAULT_RULES = [
 def _clean(v) -> str:
     s = str(v).strip()
     return "" if s.lower() in ("nan", "none") else s
+
+
+# ── Plain-text rule parsing ────────────────────────────────────────────────────
+# One rule per line. Understood phrasings (case-insensitive, "the"/trailing
+# "on the dashboard" are ignored):
+#   Link a forecast column to a dashboard LOB:
+#     "CSSD in mapping is CUSTOMER SPECIAL SERVICES DEPARTMENT in Forecast"
+#     "CUSTOMER SPECIAL SERVICES DEPARTMENT in forecast is CSSD in mapping"
+#     "forecast CSSD counts toward International"
+#   Rename a label everywhere:
+#     "CSCC in Forecast and Mapping needs to be labeled Billing/Disputes"
+#     "label CSCC as Billing/Disputes" / "rename CSCC to Billing/Disputes"
+#     "CSCC = Billing/Disputes" / "CSCC -> Billing/Disputes"
+
+_RE_LINK_MAP_FIRST = re.compile(
+    r"^(?:the\s+)?(.+?)\s+in\s+(?:the\s+)?mapping\s+is\s+(?:the\s+)?(.+?)\s+in\s+(?:the\s+)?forecast$",
+    re.I,
+)
+_RE_LINK_FC_FIRST = re.compile(
+    r"^(?:the\s+)?(.+?)\s+in\s+(?:the\s+)?forecast\s+is\s+(?:the\s+)?(.+?)\s+in\s+(?:the\s+)?mapping$",
+    re.I,
+)
+_RE_LINK_COUNTS = re.compile(
+    r"^(?:the\s+)?(?:forecast\s+(?:column\s+)?)?(.+?)\s+(?:in\s+(?:the\s+)?forecast\s+)?"
+    r"(?:counts?\s+(?:toward|towards|to|as|under)|feeds|links?\s+to)\s+(?:the\s+)?(.+)$",
+    re.I,
+)
+_RE_RENAME_VERB = re.compile(
+    r"^(?:rename|label|relabel|show)\s+(.+?)\s+(?:to|as)\s+(.+)$",
+    re.I,
+)
+_RE_RENAME_LABELED = re.compile(
+    r"^(?:the\s+)?(.+?)(?:\s+in\s+.+?)?\s+"
+    r"(?:needs?\s+to\s+be|should\s+be|must\s+be|will\s+be|is|are)?\s*"
+    r"(?:re)?labell?ed(?:\s+as)?\s+(.+)$",
+    re.I,
+)
+_RE_RENAME_ARROW = re.compile(r"^(.+?)\s*(?:=|->|→|=>)\s*(.+)$")
+
+
+def _parse_line(line: str) -> dict | None:
+    """Parse one text line into a rule dict, or None if not understood."""
+    line = re.sub(r"\s+on\s+(?:the\s+)?dashboard\.?$", "", line.strip(), flags=re.I)
+    line = line.rstrip(".").strip()
+    if not line:
+        return None
+
+    m = _RE_LINK_MAP_FIRST.match(line)
+    if m:  # "<LOB> in mapping is <column> in forecast"
+        return {"Rule Type": RULE_TYPE_LINK, "From": m.group(2).strip(),
+                "To": m.group(1).strip(), "Notes": ""}
+    m = _RE_LINK_FC_FIRST.match(line)
+    if m:  # "<column> in forecast is <LOB> in mapping"
+        return {"Rule Type": RULE_TYPE_LINK, "From": m.group(1).strip(),
+                "To": m.group(2).strip(), "Notes": ""}
+    m = _RE_RENAME_VERB.match(line)
+    if m:
+        return {"Rule Type": RULE_TYPE_RENAME, "From": m.group(1).strip(),
+                "To": m.group(2).strip(), "Notes": ""}
+    m = _RE_LINK_COUNTS.match(line)
+    if m and re.search(r"counts?\s|feeds|links?\s", line, re.I):
+        return {"Rule Type": RULE_TYPE_LINK, "From": m.group(1).strip(),
+                "To": m.group(2).strip(), "Notes": ""}
+    m = _RE_RENAME_LABELED.match(line)
+    if m and re.search(r"labell?ed", line, re.I):
+        return {"Rule Type": RULE_TYPE_RENAME, "From": m.group(1).strip(),
+                "To": m.group(2).strip(), "Notes": ""}
+    m = _RE_RENAME_ARROW.match(line)
+    if m:
+        return {"Rule Type": RULE_TYPE_RENAME, "From": m.group(1).strip(),
+                "To": m.group(2).strip(), "Notes": ""}
+    return None
+
+
+def parse_rules_text(text: str) -> tuple[list, list]:
+    """Parse the rules textarea → (valid rules, lines not understood).
+
+    Blank lines and lines starting with # are ignored; an inline " # comment"
+    is stripped before parsing.
+    """
+    rules, bad = [], []
+    for raw in str(text or "").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        line = line.split(" #")[0].strip()
+        parsed = _parse_line(line)
+        if parsed is None:
+            bad.append(raw.strip())
+        else:
+            rules.append(parsed)
+    return clean_rules(rules), bad
+
+
+def rules_to_text(rules) -> str:
+    """Render rules back to canonical text lines (used to seed the textarea)."""
+    lines = []
+    for r in rules:
+        note = f"  # {r['Notes']}" if r.get("Notes") else ""
+        if r.get("Rule Type") == RULE_TYPE_LINK:
+            lines.append(f"forecast {r['From']} counts toward {r['To']}{note}")
+        else:
+            lines.append(f"label {r['From']} as {r['To']}{note}")
+    return "\n".join(lines)
 
 
 def clean_rules(rows) -> list:

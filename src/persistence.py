@@ -142,21 +142,26 @@ def clear_targets() -> None:
         _TARGETS_FILE.unlink(missing_ok=True)
 
 
-def load_exception_rules() -> list | None:
-    """Return the saved exception/convention rules, or None if not saved."""
+def load_exception_rules() -> dict | None:
+    """Return {"text": str | None, "rules": list} for the saved exception
+    rules, or None if nothing is saved. Accepts the older list-only format."""
     try:
         data = json.loads(_RULES_FILE.read_text(encoding="utf-8"))
-        return data if isinstance(data, list) else None
+        if isinstance(data, dict) and isinstance(data.get("rules"), list):
+            return {"text": data.get("text"), "rules": data["rules"]}
+        if isinstance(data, list):
+            return {"text": None, "rules": data}
+        return None
     except Exception:
         return None
 
 
-def save_exception_rules(rules: list) -> None:
-    """Persist the exception rules so every session shares them."""
+def save_exception_rules(text: str, rules: list) -> None:
+    """Persist the rules text and its parsed form so every session shares them."""
     _ensure_dir()
     with _LOCK:
         _RULES_FILE.write_text(
-            json.dumps(rules, ensure_ascii=False, indent=2),
+            json.dumps({"text": text, "rules": rules}, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
 
