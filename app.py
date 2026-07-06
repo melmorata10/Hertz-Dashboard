@@ -1280,8 +1280,25 @@ def _display_summary(df: pd.DataFrame, table_key: str = "main"):
     # edited_rows indices back to LOB names
     st.session_state[_order_key] = list(view["LOB"])
 
-    # Apply colours first (needs numeric values), then format display strings
-    styled = _style_summary(view)
+    # Build colour styles from the NUMERIC values first, then convert every
+    # cell to a display string ourselves — st.data_editor renders NaN cells as
+    # the literal text "None" instead of honouring Styler.format's na_rep, so
+    # missing values are pre-formatted to "—" and the colours are applied to
+    # the string copy positionally.
+    if "ABN%" in view.columns:
+        _cell_styles = view.apply(_colour_row, axis=1, result_type="expand")
+        _cell_styles.columns = view.columns
+    else:
+        _cell_styles = pd.DataFrame("", index=view.index, columns=view.columns)
+    if "AHT Var%" in view.columns:
+        _cell_styles["AHT Var%"] = view["AHT Var%"].map(_colour_aht_var)
+    if len(view) > 0:
+        _last = view.index[-1]
+        _cell_styles.loc[_last] = [
+            f"{s}; font-weight: bold" if s else "font-weight: bold"
+            for s in _cell_styles.loc[_last]
+        ]
+
     fmt = {}
     for col in ("Target AHT", "AHT"):
         if col in view.columns:
@@ -1295,7 +1312,12 @@ def _display_summary(df: pd.DataFrame, table_key: str = "main"):
     for col in ("NCO", "NCH", "ABN", "Forecast Volume"):
         if col in view.columns:
             fmt[col] = _fmt_int
-    styled = styled.format(fmt, na_rep="—")
+    disp = view.copy()
+    for col, f in fmt.items():
+        disp[col] = view[col].apply(f)
+    disp = disp.fillna("—")
+
+    styled = disp.style.apply(lambda _: _cell_styles, axis=None)
 
     # Column config — Analysis is editable, everything else locked
     col_cfg = {}
