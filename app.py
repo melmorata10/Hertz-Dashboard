@@ -1005,14 +1005,47 @@ def _get_mapping_df() -> pd.DataFrame:
 
 
 def _import_from_tableau(file, current_df: pd.DataFrame) -> pd.DataFrame:
-    """Parse a Tableau Excel export and merge into current_df.
+    """Parse a mapping Excel and merge into current_df.
 
-    • Existing rows (matched by Skill ID) keep their LOB; Vendor is updated from the file.
-    • New skills are appended with a blank LOB so the team can fill them in.
-    • Returns the merged DataFrame.
+    Accepts two formats:
+    • The Tableau export ("Skill Name and Number" column): existing rows
+      (matched by Skill ID) keep their LOB; Vendor is updated from the file;
+      new skills are appended with a blank LOB so the team can fill them in.
+    • The Mapping Manager's own "Download Excel" file (Skill ID / Queue Name /
+      LOB / Vendor): a full restore — the file's LOB and Vendor assignments
+      are applied as-is, falling back to the current table where blank.
     """
     raw = pd.read_excel(file)
     raw.columns = [str(c).strip() for c in raw.columns]
+
+    def _clean(v) -> str:
+        s = str(v).strip()
+        return "" if s.lower() in ("nan", "none") else s
+
+    # Round-trip restore path: the dashboard's own export
+    if "Queue Name" in raw.columns:
+        existing = {}
+        for _, r in current_df.iterrows():
+            q = _clean(r.get("Queue Name"))
+            if q:
+                existing[q] = (_clean(r.get("LOB")), _clean(r.get("Vendor")))
+        rows, seen = [], set()
+        for _, row in raw.iterrows():
+            queue = _clean(row.get("Queue Name"))
+            if not queue or queue in seen:
+                continue
+            seen.add(queue)
+            sid = _clean(row.get("Skill ID"))
+            if sid.endswith(".0"):          # Excel round-trips IDs as floats
+                sid = sid[:-2]
+            ex_lob, ex_ven = existing.get(queue, ("", ""))
+            rows.append({
+                "Skill ID":   sid,
+                "Queue Name": queue,
+                "LOB":        _clean(row.get("LOB")) or ex_lob,
+                "Vendor":     _clean(row.get("Vendor")) or ex_ven,
+            })
+        return pd.DataFrame(rows, columns=["Skill ID", "Queue Name", "LOB", "Vendor"])
 
     # Resolve skill-key column
     for cand in ("Skill Name and Number", "Skill Name and Number (H)", "SkillName"):
@@ -2457,7 +2490,10 @@ with tab3:
         st.markdown(
             "Upload the **Skill Name and ID from Tableau.xlsx** file to add or update entries. "
             "Existing LOB assignments are preserved — only new skills are added (with a blank LOB "
-            "you can fill in below). Vendor is updated from the file."
+            "you can fill in below). Vendor is updated from the file.  \n"
+            "You can also re-upload the **Excel downloaded from this Mapping Manager** to restore "
+            "a saved mapping — its LOB and Vendor assignments are applied as-is. "
+            "Either way, click **💾 Apply** afterwards to make it the active mapping."
         )
         xl_upload = st.file_uploader(
             "Upload Tableau mapping Excel",
