@@ -211,6 +211,80 @@ def apply_to_forecast_df(fc_df: pd.DataFrame, rules) -> pd.DataFrame:
     return out
 
 
+def build_mapping_network(mapping_df, rules, fc_lobs=None) -> tuple:
+    """One row per dashboard LOB: the full skill → LOB → forecast reference.
+
+    ``mapping_df`` is the Mapping Manager table (Skill ID / Queue Name / LOB /
+    Vendor); ``fc_lobs`` is the set of LOB labels present in the loaded
+    forecast AFTER rename rules, or None when no forecast is loaded.
+    Returns (network_df, unmatched_forecast_columns).
+    """
+    ren = lob_renames(rules)
+    merged = build_forecast_lob_map(rules)
+    fc_lobs = set(fc_lobs) if fc_lobs is not None else None
+
+    groups: dict = {}
+    if mapping_df is not None and not mapping_df.empty:
+        for _, r in mapping_df.iterrows():
+            queue = _clean(r.get("Queue Name"))
+            if not queue:
+                continue
+            raw = _clean(r.get("LOB")) or "(no LOB assigned)"
+            lob = ren.get(raw, raw)
+            g = groups.setdefault(lob, {"skills": 0, "vendors": set(), "sources": set()})
+            g["skills"] += 1
+            vendor = _clean(r.get("Vendor"))
+            if vendor:
+                g["vendors"].add(vendor)
+            if raw != lob:
+                g["sources"].add(raw)
+
+    used_cols: set = set()
+    rows = []
+    for lob, g in groups.items():
+        # Mirror add_forecast_cols: explicit map first, then the identity
+        # fallback (forecast column named exactly like the LOB)
+        fc_cols = list(merged.get(lob, []))
+        if not fc_cols and fc_lobs is not None and lob in fc_lobs:
+            fc_cols = [lob]
+        used_cols.update(fc_cols)
+
+        if lob == "(no LOB assigned)":
+            fc_disp, status = "—", "⚠️ skills without a LOB — excluded from reports"
+        elif not fc_cols:
+            fc_disp, status = "—", "⚠️ no forecast column linked"
+        elif fc_lobs is None:
+            fc_disp, status = " + ".join(fc_cols), "📄 forecast not loaded"
+        else:
+            missing = [c for c in fc_cols if c not in fc_lobs]
+            fc_disp = " + ".join(fc_cols)
+            status = "✅ linked" if not missing else (
+                "⚠️ not in forecast file: " + ", ".join(missing)
+            )
+
+        rows.append({
+            "Dashboard LOB": lob,
+            "Skills": g["skills"],
+            "Vendors": ", ".join(sorted(g["vendors"])) or "—",
+            "Renamed from": ", ".join(sorted(g["sources"])) or "—",
+            "Forecast column(s)": fc_disp,
+            "Status": status,
+        })
+
+    net = pd.DataFrame(
+        rows,
+        columns=["Dashboard LOB", "Skills", "Vendors", "Renamed from",
+                 "Forecast column(s)", "Status"],
+    )
+    if not net.empty:
+        net = net.sort_values(
+            ["Skills", "Dashboard LOB"], ascending=[False, True]
+        ).reset_index(drop=True)
+
+    unmatched = sorted(fc_lobs - used_cols) if fc_lobs is not None else []
+    return net, unmatched
+
+
 def build_forecast_lob_map(rules, base: dict = None) -> dict:
     """Merge the built-in FORECAST_LOB_MAP with the user's link rules.
 

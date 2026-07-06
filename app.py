@@ -22,6 +22,8 @@ from src.exception_rules import (
     DEFAULT_RULES as _DEFAULT_RULES,
     parse_rules_text as _parse_rules_text,
     rules_to_text as _rules_to_text,
+    lob_renames as _rules_lob_renames,
+    build_mapping_network as _build_mapping_network,
     apply_to_mapping as _rules_apply_to_mapping,
     apply_to_forecast_df as _rules_apply_to_forecast,
     build_forecast_lob_map as _rules_forecast_lob_map,
@@ -2365,7 +2367,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
     "📑 ASA Report Export",
     "🧑‍💼 Agent AHT",
     "📅 Daily Forecast",
-    "⚖️ Exception Rules",
+    "🕸️ Mapping Network",
 ])
 
 # ── Tab 1: Voice Performance Summary ─────────────────────────────────────────
@@ -3146,74 +3148,134 @@ with tab7:
                 mime="text/csv",
             )
 
-# ── Tab 8: Exception Rules ────────────────────────────────────────────────────
+# ── Tab 8: Mapping Network ────────────────────────────────────────────────────
 with tab8:
-    st.subheader("Exception / Convention Rules")
+    st.subheader("Mapping Network")
     st.caption(
-        "Write your naming conventions as plain text — **one rule per line** — and "
-        "click Apply. Whatever the dashboard understands is applied everywhere "
-        "(summary tables, forecast columns, Daily Forecast tab) for **all users**; "
-        "lines it can't understand are listed and skipped. Lines starting with `#` "
-        "are comments.  \n"
-        "Examples it understands:  \n"
-        "• `CSCC in Forecast and Mapping needs to be labeled Billing/Disputes` "
-        "*(rename a label everywhere)*  \n"
-        "• `CSSD in mapping is CUSTOMER SPECIAL SERVICES DEPARTMENT in Forecast` "
-        "*(link a forecast column to a LOB)*  \n"
-        "• Short forms too: `label CSCC as Billing/Disputes` · "
-        "`forecast CSSD counts toward International` · `CSCC = Billing/Disputes`"
+        "The whole reference chain in one glance — every dashboard LOB, how many "
+        "skills feed it, which labels the convention rules fold into it, and which "
+        "forecast column(s) power its Forecast Volume / Forecast Variance. "
+        "⚠️ rows show broken links to fix."
     )
 
-    _rules_rev = st.session_state.setdefault("exception_rules_rev", 0)
-    _rules_text_val = st.text_area(
-        "Rules",
-        value=st.session_state.get("exception_rules_text", ""),
-        height=220,
-        key=f"exception_rules_text_area_{_rules_rev}",
-        label_visibility="collapsed",
-        placeholder="One rule per line, e.g.\nCSCC in Forecast and Mapping needs to be labeled Billing/Disputes",
+    _net_rules = st.session_state.get("exception_rules", [])
+    _net_fc_lobs = (
+        set(_fc_data["LOB"].astype(str).unique()) if _fc_data is not None else None
     )
+    _net_mdf = _get_mapping_df()
+    _net_df, _net_unmatched = _build_mapping_network(_net_mdf, _net_rules, _net_fc_lobs)
 
-    # Live interpretation of what's currently typed (applied only on Apply)
-    _rules_preview, _rules_bad = _parse_rules_text(_rules_text_val)
-    if _rules_preview:
-        st.markdown("**How the dashboard reads this:**")
-        for _r in _rules_preview:
-            if _r["Rule Type"] == _RULE_RENAME:
-                st.markdown(f"- 🔁 **{_r['From']}** is shown as **{_r['To']}** everywhere")
-            else:
-                st.markdown(
-                    f"- 🔗 forecast column **{_r['From']}** counts toward LOB **{_r['To']}**"
-                )
-    if _rules_bad:
-        st.warning(
-            "These lines were **not understood** and will be skipped:  \n"
-            + "  \n".join(f"• {l}" for l in _rules_bad)
+    if _net_df.empty:
+        st.info(
+            "🗺️ No skills mapped yet — import a mapping in the **Mapping Manager** "
+            "tab and the network will appear here."
+        )
+    else:
+        _n_linked = int((_net_df["Status"] == "✅ linked").sum())
+        _n_warn = int(_net_df["Status"].astype(str).str.startswith("⚠️").sum())
+        st.markdown(
+            f"**{len(_net_df)} dashboard LOBs** · {int(_net_df['Skills'].sum()):,} skills · "
+            f"✅ {_n_linked} linked to forecast · ⚠️ {_n_warn} need attention"
+            + ("" if _net_fc_lobs is not None else " · 📄 upload a forecast to check links")
+        )
+        st.dataframe(
+            _net_df,
+            hide_index=True,
+            use_container_width=True,
+            height=min(38 * (len(_net_df) + 1) + 4, 560),
         )
 
-    _r_apply, _r_reset, _r_info = st.columns([1, 1, 3])
-    with _r_apply:
-        if st.button("💾 Apply Rules", type="primary", use_container_width=True,
-                     key="rules_apply_btn"):
-            st.session_state["exception_rules"] = _rules_preview
-            st.session_state["exception_rules_text"] = _rules_text_val
-            save_exception_rules(_rules_text_val, _rules_preview)
-            st.rerun()
-    with _r_reset:
-        if st.button("↩️ Reset to defaults", use_container_width=True,
-                     key="rules_reset_btn"):
-            _def_rules = [dict(r) for r in _DEFAULT_RULES]
-            _def_text = _rules_to_text(_def_rules)
-            st.session_state["exception_rules"] = _def_rules
-            st.session_state["exception_rules_text"] = _def_text
-            save_exception_rules(_def_text, _def_rules)
-            st.session_state["exception_rules_rev"] += 1
-            st.rerun()
-    with _r_info:
-        _active_rules = st.session_state.get("exception_rules", [])
-        _n_ren = sum(1 for r in _active_rules if r.get("Rule Type") == _RULE_RENAME)
+        if _net_unmatched:
+            st.warning(
+                "**Forecast columns not feeding any LOB:** "
+                + ", ".join(_net_unmatched)
+                + "  \nAdd a rule below (e.g. `forecast <column> counts toward <LOB>`) "
+                "or name a mapping LOB to match."
+            )
+
+        # ── Drill-down: skills behind one LOB ─────────────────────────────────
+        _net_sel = st.selectbox(
+            "🔍 Drill into a LOB to see its skills",
+            ["—"] + list(_net_df["Dashboard LOB"]),
+            key="net_drill",
+        )
+        if _net_sel != "—":
+            _net_ren = _rules_lob_renames(_net_rules)
+            _net_skills = _net_mdf[
+                _net_mdf["LOB"].astype(str).str.strip()
+                .map(lambda x: _net_ren.get(x, x) if x else "(no LOB assigned)")
+                == _net_sel
+            ][["Skill ID", "Queue Name", "LOB", "Vendor"]].reset_index(drop=True)
+            st.caption(f"**{len(_net_skills)} skill(s)** report under **{_net_sel}**")
+            st.dataframe(
+                _net_skills,
+                hide_index=True,
+                use_container_width=True,
+                height=min(38 * (len(_net_skills) + 1) + 4, 420),
+            )
+
+    st.markdown("---")
+
+    # ── Convention rules (plain-text) — these define the network's links ──────
+    with st.expander("✏️ Convention rules — edit the connections", expanded=False):
         st.caption(
-            f"**{len(_active_rules)} rule(s) currently active** — {_n_ren} rename, "
-            f"{len(_active_rules) - _n_ren} forecast link. Edits above take effect "
-            "when you click Apply."
+            "One rule per line; whatever the dashboard understands is applied for "
+            "**all users** and the network above updates. Lines starting with `#` "
+            "are comments.  \n"
+            "Examples: `CSCC in Forecast and Mapping needs to be labeled Billing/Disputes` · "
+            "`CSSD in mapping is CUSTOMER SPECIAL SERVICES DEPARTMENT in Forecast` · "
+            "`label CSCC as Billing/Disputes` · `forecast CSSD counts toward International`"
         )
+        _rules_rev = st.session_state.setdefault("exception_rules_rev", 0)
+        _rules_text_val = st.text_area(
+            "Rules",
+            value=st.session_state.get("exception_rules_text", ""),
+            height=220,
+            key=f"exception_rules_text_area_{_rules_rev}",
+            label_visibility="collapsed",
+            placeholder="One rule per line, e.g.\nCSCC in Forecast and Mapping needs to be labeled Billing/Disputes",
+        )
+
+        # Live interpretation of what's currently typed (applied only on Apply)
+        _rules_preview, _rules_bad = _parse_rules_text(_rules_text_val)
+        if _rules_preview:
+            st.markdown("**How the dashboard reads this:**")
+            for _r in _rules_preview:
+                if _r["Rule Type"] == _RULE_RENAME:
+                    st.markdown(f"- 🔁 **{_r['From']}** is shown as **{_r['To']}** everywhere")
+                else:
+                    st.markdown(
+                        f"- 🔗 forecast column **{_r['From']}** counts toward LOB **{_r['To']}**"
+                    )
+        if _rules_bad:
+            st.warning(
+                "These lines were **not understood** and will be skipped:  \n"
+                + "  \n".join(f"• {l}" for l in _rules_bad)
+            )
+
+        _r_apply, _r_reset, _r_info = st.columns([1, 1, 3])
+        with _r_apply:
+            if st.button("💾 Apply Rules", type="primary", use_container_width=True,
+                         key="rules_apply_btn"):
+                st.session_state["exception_rules"] = _rules_preview
+                st.session_state["exception_rules_text"] = _rules_text_val
+                save_exception_rules(_rules_text_val, _rules_preview)
+                st.rerun()
+        with _r_reset:
+            if st.button("↩️ Reset to defaults", use_container_width=True,
+                         key="rules_reset_btn"):
+                _def_rules = [dict(r) for r in _DEFAULT_RULES]
+                _def_text = _rules_to_text(_def_rules)
+                st.session_state["exception_rules"] = _def_rules
+                st.session_state["exception_rules_text"] = _def_text
+                save_exception_rules(_def_text, _def_rules)
+                st.session_state["exception_rules_rev"] += 1
+                st.rerun()
+        with _r_info:
+            _active_rules = st.session_state.get("exception_rules", [])
+            _n_ren = sum(1 for r in _active_rules if r.get("Rule Type") == _RULE_RENAME)
+            st.caption(
+                f"**{len(_active_rules)} rule(s) currently active** — {_n_ren} rename, "
+                f"{len(_active_rules) - _n_ren} forecast link. Edits take effect "
+                "when you click Apply."
+            )
