@@ -28,6 +28,8 @@ from src.persistence import (
     load_custom_mapping, save_custom_mapping,
     load_mapping_df, save_mapping_df,
     load_targets, save_targets, clear_targets, load_targets_mtime,
+    load_daily_forecast, save_daily_forecast,
+    clear_daily_forecast, load_daily_forecast_mtime,
 )
 
 # SharePoint connector
@@ -2073,22 +2075,42 @@ else:  # SharePoint
         st.info("☁️ Sign in to SharePoint using the sidebar to load data.")
 
 # ── Daily Forecast → NCO % / NCH % enrichment ────────────────────────────────
-# Parse the Daily Forecast upload BEFORE the tabs render so the Voice
-# Performance Summary tables can use it on the same rerun. The uploader widget
-# itself lives in the Daily Forecast tab; its value is read from session state.
-_fc_upload = st.session_state.get("daily_forecast_upload")
+# The forecast is persisted server-side (like the mapping): an upload by one
+# user is saved to disk and every session loads it from there — no re-upload
+# needed until a new file replaces it. Parsing/loading happens BEFORE the tabs
+# render so the Voice Performance Summary tables can use it on the same rerun.
+# The uploader widget lives in the Daily Forecast tab; its key is versioned so
+# "Remove saved forecast" can reset it.
+_fc_rev = st.session_state.setdefault("daily_forecast_upload_rev", 0)
+_fc_upload = st.session_state.get(f"daily_forecast_upload_{_fc_rev}")
 if _fc_upload is not None:
     _fc_sig = (_fc_upload.name, getattr(_fc_upload, "size", None))
     if st.session_state.get("daily_forecast_sig") != _fc_sig:
         try:
-            st.session_state["daily_forecast_df"] = parse_daily_forecast(_fc_upload)
+            _fc_parsed = parse_daily_forecast(_fc_upload)
+            save_daily_forecast(_fc_parsed, _fc_upload.name)
+            st.session_state["daily_forecast_df"] = _fc_parsed
             st.session_state["daily_forecast_name"] = _fc_upload.name
             st.session_state["daily_forecast_sig"] = _fc_sig
+            st.session_state["daily_forecast_mtime"] = load_daily_forecast_mtime()
             st.session_state.pop("daily_forecast_err", None)
         except Exception as _fc_exc:
             st.session_state["daily_forecast_err"] = str(_fc_exc)
             st.session_state.pop("daily_forecast_df", None)
             st.session_state.pop("daily_forecast_sig", None)
+
+# Sync with the server copy: first visit loads it, and a newer save by another
+# user (mtime changed) live-reloads it; a cleared file drops it everywhere.
+_fc_disk_mtime = load_daily_forecast_mtime()
+if _fc_disk_mtime > 0:
+    if st.session_state.get("daily_forecast_mtime") != _fc_disk_mtime:
+        _fc_loaded = load_daily_forecast()
+        if _fc_loaded is not None:
+            st.session_state["daily_forecast_df"], st.session_state["daily_forecast_name"] = _fc_loaded
+            st.session_state["daily_forecast_mtime"] = _fc_disk_mtime
+elif st.session_state.get("daily_forecast_mtime"):
+    for _fc_key in ("daily_forecast_df", "daily_forecast_name", "daily_forecast_mtime"):
+        st.session_state.pop(_fc_key, None)
 
 _fc_data = st.session_state.get("daily_forecast_df")
 _fc_report_date = None
@@ -2857,7 +2879,10 @@ with tab7:
     )
 
     _fc_file = st.file_uploader(
-        "Upload Daily Forecast (.xlsx)", type=["xlsx"], key="daily_forecast_upload",
+        "Upload Daily Forecast (.xlsx)",
+        type=["xlsx"],
+        key=f"daily_forecast_upload_{st.session_state['daily_forecast_upload_rev']}",
+        help="Saved on the server and shared with all users — upload again only to replace it.",
     )
 
     if st.session_state.get("daily_forecast_err"):
@@ -2868,11 +2893,27 @@ with tab7:
         st.info("⬆️ Upload the Daily Forecast workbook to see the forecast view.")
     else:
         _fc_dates = sorted(_fc_df["Date"].unique())
-        st.success(
-            f"✅ **{st.session_state.get('daily_forecast_name', 'Daily Forecast')}** loaded — "
-            f"{_fc_dates[0].strftime('%b %d, %Y')} to {_fc_dates[-1].strftime('%b %d, %Y')} · "
-            f"{len(_fc_dates)} days · {_fc_df['Site'].nunique()} sites"
-        )
+        _fc_ok_col, _fc_del_col = st.columns([8, 2])
+        with _fc_ok_col:
+            st.success(
+                f"💾 **{st.session_state.get('daily_forecast_name', 'Daily Forecast')}** saved for all users — "
+                f"{_fc_dates[0].strftime('%b %d, %Y')} to {_fc_dates[-1].strftime('%b %d, %Y')} · "
+                f"{len(_fc_dates)} days · {_fc_df['Site'].nunique()} sites"
+            )
+        with _fc_del_col:
+            if st.button(
+                "🗑️ Remove", key="daily_forecast_clear", use_container_width=True,
+                help="Delete the saved forecast for all users",
+            ):
+                clear_daily_forecast()
+                for _fc_key in (
+                    "daily_forecast_df", "daily_forecast_name",
+                    "daily_forecast_mtime", "daily_forecast_sig",
+                    "daily_forecast_err",
+                ):
+                    st.session_state.pop(_fc_key, None)
+                st.session_state["daily_forecast_upload_rev"] += 1
+                st.rerun()
 
         _fc_sites = list(dict.fromkeys(_fc_df["Site"]))
         _fc_months = sorted({(d.year, d.month) for d in _fc_dates})

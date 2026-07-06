@@ -22,6 +22,7 @@ _COMMENTS_FILE   = _DATA_DIR / "lob_comments.json"
 _MAPPING_FILE    = _DATA_DIR / "custom_mapping.json"
 _MAPPING_DF_FILE = _DATA_DIR / "mapping_df.json"
 _TARGETS_FILE    = _DATA_DIR / "custom_targets.json"
+_FORECAST_FILE   = _DATA_DIR / "daily_forecast.json"
 
 
 def _ensure_dir() -> None:
@@ -126,6 +127,54 @@ def clear_targets() -> None:
     """Remove persisted targets (revert to built-in)."""
     with _LOCK:
         _TARGETS_FILE.unlink(missing_ok=True)
+
+
+def save_daily_forecast(df: pd.DataFrame, name: str) -> None:
+    """Persist the parsed Daily Forecast frame so every session shares it."""
+    _ensure_dir()
+    payload = {
+        "name": name,
+        "records": df.assign(
+            Date=df["Date"].astype(str),
+            Week=df["Week"].astype(str),
+        ).to_dict("records"),
+    }
+    with _LOCK:
+        _FORECAST_FILE.write_text(
+            json.dumps(payload, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+
+def load_daily_forecast() -> tuple[pd.DataFrame, str] | None:
+    """Return (forecast_df, source_filename) from disk, or None if not saved."""
+    try:
+        payload = json.loads(_FORECAST_FILE.read_text(encoding="utf-8"))
+        df = pd.DataFrame(payload["records"])
+        df["Date"] = pd.to_datetime(df["Date"], errors="coerce").dt.date
+        df["Week"] = pd.to_datetime(df["Week"], errors="coerce").dt.date
+        df["Forecast"] = pd.to_numeric(df["Forecast"], errors="coerce").fillna(0.0)
+        df = df[df["Date"].notna()].reset_index(drop=True)
+        if df.empty:
+            return None
+        return df, str(payload.get("name", "Daily Forecast"))
+    except Exception:
+        return None
+
+
+def clear_daily_forecast() -> None:
+    """Remove the persisted Daily Forecast."""
+    with _LOCK:
+        _FORECAST_FILE.unlink(missing_ok=True)
+
+
+def load_daily_forecast_mtime() -> float:
+    """Modification time of the saved forecast, or 0.0 if absent — lets a
+    session detect that another user uploaded a new forecast and live-reload."""
+    try:
+        return _FORECAST_FILE.stat().st_mtime
+    except Exception:
+        return 0.0
 
 
 def load_targets_mtime() -> float:
