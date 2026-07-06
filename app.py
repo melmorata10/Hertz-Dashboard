@@ -27,8 +27,8 @@ from src.excel_export import (
 from src.mapping import SKILL_TO_LOB as _BUILTIN_MAPPING, LOB_DISPLAY_ORDER as _LOB_ORDER, TARGETS as _BUILTIN_TARGETS
 from src.persistence import (
     load_comments, save_comments, clear_comments,
-    load_custom_mapping, save_custom_mapping,
-    load_mapping_df, save_mapping_df,
+    load_custom_mapping, save_custom_mapping, clear_custom_mapping,
+    load_mapping_df, save_mapping_df, clear_mapping_df,
     load_targets, save_targets, clear_targets, load_targets_mtime,
     load_daily_forecast, save_daily_forecast,
     clear_daily_forecast, load_daily_forecast_mtime,
@@ -61,11 +61,12 @@ if "lob_comments" not in st.session_state:
 if "custom_mapping" not in st.session_state:
     _persisted_mapping = load_custom_mapping()
     if _persisted_mapping is not None:
-        # Auto-sync: push any new or changed built-in entries into the saved mapping
-        # so newly added LOBs / remapped skills are reflected without a manual Reset.
+        # Add-only sync: append built-in entries that don't exist yet so newly
+        # shipped skills appear automatically. Never overwrite a saved
+        # assignment — RTA remaps and fresh imports must survive new sessions.
         _cm_changed = False
         for _k, _v in _BUILTIN_MAPPING.items():
-            if _persisted_mapping.get(_k) != _v:
+            if _k not in _persisted_mapping:
                 _persisted_mapping[_k] = _v
                 _cm_changed = True
         if _cm_changed:
@@ -2504,20 +2505,64 @@ with tab3:
             key="mapping_xl_upload",
             label_visibility="collapsed",
         )
+        _fresh_import = st.checkbox(
+            "🆕 Start fresh — replace the entire existing mapping with this file",
+            key="mapping_xl_replace",
+            help="Unchecked: merge into the current table (existing assignments kept). "
+                 "Checked: the mapping becomes exactly what's in the file — nothing "
+                 "from the current table is carried over.",
+        )
         if xl_upload:
-            try:
-                current = _get_mapping_df()
-                merged  = _import_from_tableau(xl_upload, current)
-                st.session_state["mapping_df"] = merged
-                save_mapping_df(merged)   # persist so other users see the import
-                blank_lob = (merged["LOB"] == "").sum()
-                st.success(
-                    f"✅ Imported {len(merged):,} unique skills. "
-                    + (f"**{blank_lob} new skills** have a blank LOB — fill them in below and click Apply." if blank_lob else "All LOBs are mapped.")
-                )
-                st.rerun()
-            except Exception as _err:
-                st.error(f"Could not import: {_err}")
+            _xl_sig = (xl_upload.name, xl_upload.size, _fresh_import)
+            if st.session_state.get("_mapping_import_sig") == _xl_sig:
+                st.info("✅ File imported — review below and click **💾 Apply** to activate.")
+            else:
+                try:
+                    current = (
+                        pd.DataFrame(columns=["Skill ID", "Queue Name", "LOB", "Vendor"])
+                        if _fresh_import else _get_mapping_df()
+                    )
+                    merged = _import_from_tableau(xl_upload, current)
+                    st.session_state["mapping_df"] = merged
+                    if _fresh_import:
+                        # a fresh import IS the full list — don't re-append built-ins
+                        st.session_state["_mapping_df_synced"] = True
+                    save_mapping_df(merged)   # persist so other users see the import
+                    st.session_state["_mapping_import_sig"] = _xl_sig
+                    blank_lob = (merged["LOB"] == "").sum()
+                    st.success(
+                        f"✅ Imported {len(merged):,} unique skills"
+                        + (" (fresh — previous mapping replaced)." if _fresh_import else ". ")
+                        + (f" **{blank_lob} skills** have a blank LOB — fill them in below and click Apply." if blank_lob else " All LOBs are mapped.")
+                    )
+                    st.rerun()
+                except Exception as _err:
+                    st.error(f"Could not import: {_err}")
+
+    # ── Delete saved mapping ──────────────────────────────────────────────────
+    with st.expander("🗑️ Delete saved mapping", expanded=False):
+        st.markdown(
+            "Deletes the saved custom mapping **for all users** and reverts the dashboard "
+            "to the **built-in mapping**. To replace it with a file instead, use "
+            "**🆕 Start fresh** in the import section above."
+        )
+        _map_del_ok = st.checkbox(
+            "I understand this removes the saved mapping for all users",
+            key="map_del_confirm",
+        )
+        if st.button(
+            "🗑️ Delete custom mapping",
+            disabled=not _map_del_ok,
+            key="map_del_btn",
+        ):
+            clear_custom_mapping()
+            clear_mapping_df()
+            for _map_k in (
+                "mapping_df", "custom_mapping",
+                "_mapping_df_synced", "_mapping_import_sig",
+            ):
+                st.session_state.pop(_map_k, None)
+            st.rerun()
 
     st.markdown("---")
 

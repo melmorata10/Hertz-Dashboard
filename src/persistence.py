@@ -76,6 +76,12 @@ def save_custom_mapping(mapping: dict) -> None:
         )
 
 
+def clear_custom_mapping() -> None:
+    """Remove the persisted custom mapping (revert to built-in)."""
+    with _LOCK:
+        _MAPPING_FILE.unlink(missing_ok=True)
+
+
 def load_mapping_df() -> pd.DataFrame | None:
     """Return the saved editable mapping DataFrame, or None."""
     try:
@@ -97,6 +103,12 @@ def save_mapping_df(df: pd.DataFrame) -> None:
             json.dumps(df.to_dict("records"), ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+
+
+def clear_mapping_df() -> None:
+    """Remove the persisted editable mapping table (revert to built-in)."""
+    with _LOCK:
+        _MAPPING_DF_FILE.unlink(missing_ok=True)
 
 
 # ── Custom targets ─────────────────────────────────────────────────────────────
