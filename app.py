@@ -13,7 +13,7 @@ from src.agent_aht import (
     report_filename as _aht_report_filename,
 )
 from src.daily_forecast import (
-    parse_daily_forecast, forecast_pivot, add_forecast_pct,
+    parse_daily_forecast, forecast_pivot, add_forecast_cols,
     FORECAST_VENDOR_SHEETS as _FC_VENDOR_SHEETS,
 )
 from src.data_processor import prepare
@@ -790,7 +790,7 @@ def _abn_driver_brief(row: pd.Series) -> str:
 def _summary_to_tsv(df: pd.DataFrame) -> str:
     """Tab-separated + formatted — plain-text fallback for clipboard."""
     display_cols = [
-        "LOB", "NCO", "NCH", "OTF %", "HTF %",
+        "LOB", "NCO", "NCH", "Forecast Volume", "Forecast Variance",
         "Target AHT", "AHT", "AHT Var%",
         "ABN", "Target ABN%", "ABN%",
         "Target ASA", "ASA", "Comment / Action",
@@ -805,10 +805,10 @@ def _summary_to_tsv(df: pd.DataFrame) -> str:
     for col in ("Target ASA", "ASA"):
         if col in view.columns:
             view[col] = view[col].apply(_fmt_seconds)
-    for col in ("AHT Var%", "ABN%", "Target ABN%", "OTF %", "HTF %"):
+    for col in ("AHT Var%", "ABN%", "Target ABN%", "Forecast Variance"):
         if col in view.columns:
             view[col] = view[col].apply(_fmt_pct)
-    for col in ("NCO", "NCH", "ABN"):
+    for col in ("NCO", "NCH", "ABN", "Forecast Volume"):
         if col in view.columns:
             view[col] = view[col].apply(_fmt_int)
     return view.to_csv(sep="\t", index=False, na_rep="—")
@@ -837,7 +837,7 @@ def _summary_to_html_table(
     df    = pd.concat([_lobs, _gt], ignore_index=True)
 
     display_cols = [
-        "LOB", "NCO", "NCH", "OTF %", "HTF %",
+        "LOB", "NCO", "NCH", "Forecast Volume", "Forecast Variance",
         "Target AHT", "AHT", "AHT Var%",
         "ABN", "Target ABN%", "ABN%",
         "Target ASA", "ASA", "Comment / Action",
@@ -875,8 +875,8 @@ def _summary_to_html_table(
     def _fmt(col, val):
         if col in ("Target AHT", "AHT"):               return _fmt_seconds_int(val)
         if col in ("Target ASA", "ASA"):               return _fmt_seconds(val)
-        if col in ("AHT Var%", "ABN%", "Target ABN%", "OTF %", "HTF %"): return _fmt_pct(val)
-        if col in ("NCO", "NCH", "ABN"):               return _fmt_int(val)
+        if col in ("AHT Var%", "ABN%", "Target ABN%", "Forecast Variance"): return _fmt_pct(val)
+        if col in ("NCO", "NCH", "ABN", "Forecast Volume"):               return _fmt_int(val)
         return str(val) if pd.notna(val) else "—"
 
     def _get_comment(row) -> str:
@@ -1176,8 +1176,8 @@ _COL_WIDTHS = {
     "LOB":         160,
     "NCO":          80,
     "NCH":          80,
-    "OTF %":        80,
-    "HTF %":        80,
+    "Forecast Volume":   105,
+    "Forecast Variance": 105,
     "Target AHT":   80,
     "AHT":          80,
     "AHT Var%":     80,
@@ -1226,7 +1226,7 @@ def _kpi_cards(df: pd.DataFrame):
 def _display_summary(df: pd.DataFrame, table_key: str = "main"):
     """Render the summary table. Analysis column is editable inline."""
     display_cols = [
-        "LOB", "NCO", "NCH", "OTF %", "HTF %",
+        "LOB", "NCO", "NCH", "Forecast Volume", "Forecast Variance",
         "Target AHT", "AHT", "AHT Var%",
         "ABN", "Target ABN%", "ABN%",
         "Target ASA", "ASA", "Analysis",
@@ -1289,10 +1289,10 @@ def _display_summary(df: pd.DataFrame, table_key: str = "main"):
     for col in ("Target ASA", "ASA"):
         if col in view.columns:
             fmt[col] = _fmt_seconds
-    for col in ("AHT Var%", "ABN%", "Target ABN%", "OTF %", "HTF %"):
+    for col in ("AHT Var%", "ABN%", "Target ABN%", "Forecast Variance"):
         if col in view.columns:
             fmt[col] = _fmt_pct
-    for col in ("NCO", "NCH", "ABN"):
+    for col in ("NCO", "NCH", "ABN", "Forecast Volume"):
         if col in view.columns:
             fmt[col] = _fmt_int
     styled = styled.format(fmt, na_rep="—")
@@ -1481,7 +1481,7 @@ def _summary_dialog(df: pd.DataFrame, table_key: str):
     # Overlay any user edits from the live data_editor
     df = _merge_editor_edits(df, table_key)
 
-    display_cols = ["LOB", "NCO", "NCH", "OTF %", "HTF %", "Target AHT", "AHT", "AHT Var%",
+    display_cols = ["LOB", "NCO", "NCH", "Forecast Volume", "Forecast Variance", "Target AHT", "AHT", "AHT Var%",
                     "ABN", "Target ABN%", "ABN%", "Target ASA", "ASA", "Analysis"]
     present = [c for c in display_cols if c in df.columns]
 
@@ -1521,8 +1521,8 @@ def _summary_dialog(df: pd.DataFrame, table_key: str):
     def _fmt_cell(col, val):
         if col in ("Target AHT", "AHT"):               return _fmt_seconds_int(val)
         if col in ("Target ASA", "ASA"):               return _fmt_seconds(val)
-        if col in ("AHT Var%", "ABN%", "Target ABN%", "OTF %", "HTF %"): return _fmt_pct(val)
-        if col in ("NCO", "NCH", "ABN"):               return _fmt_int(val)
+        if col in ("AHT Var%", "ABN%", "Target ABN%", "Forecast Variance"): return _fmt_pct(val)
+        if col in ("NCO", "NCH", "ABN", "Forecast Volume"):               return _fmt_int(val)
         if col == "Analysis":                          return str(val) if val else ""
         return str(val) if pd.notna(val) else "—"
 
@@ -1530,7 +1530,7 @@ def _summary_dialog(df: pd.DataFrame, table_key: str):
     # LOB=130, 10 metrics=72px each (uniform), Analysis=450 → ratios preserved at full width.
     _DLG_W = {
         "LOB": 130, "NCO": 72, "NCH": 72,
-        "OTF %": 72, "HTF %": 72,
+        "Forecast Volume": 84, "Forecast Variance": 84,
         "Target AHT": 72, "AHT": 72, "AHT Var%": 72,
         "ABN": 72, "Target ABN%": 72, "ABN%": 72,
         "Target ASA": 72, "ASA": 72, "Analysis": 450,
@@ -1642,8 +1642,8 @@ def _interval_dialog(df: pd.DataFrame):
     def _fmt_cell(col, val):
         if col in ("Target AHT", "AHT"):               return _fmt_seconds_int(val)
         if col in ("Target ASA", "ASA"):               return _fmt_seconds(val)
-        if col in ("AHT Var%", "ABN%", "Target ABN%", "OTF %", "HTF %"): return _fmt_pct(val)
-        if col in ("NCO", "NCH", "ABN"):               return _fmt_int(val)
+        if col in ("AHT Var%", "ABN%", "Target ABN%", "Forecast Variance"): return _fmt_pct(val)
+        if col in ("NCO", "NCH", "ABN", "Forecast Volume"):               return _fmt_int(val)
         return str(val) if pd.notna(val) else "—"
 
     _iv_widths = {
@@ -1847,10 +1847,10 @@ def _display_interval(df: pd.DataFrame, lob_filter: list, vendor_filter: list):
     for col in ("Target ASA", "ASA"):           # 1 decimal
         if col in view.columns:
             fmt[col] = _fmt_seconds
-    for col in ("AHT Var%", "ABN%", "Target ABN%", "OTF %", "HTF %"):
+    for col in ("AHT Var%", "ABN%", "Target ABN%", "Forecast Variance"):
         if col in view.columns:
             fmt[col] = _fmt_pct
-    for col in ("NCO", "NCH", "ABN"):
+    for col in ("NCO", "NCH", "ABN", "Forecast Volume"):
         if col in view.columns:
             fmt[col] = _fmt_int
     styled = styled.format(fmt, na_rep="—")
@@ -2074,7 +2074,7 @@ else:  # SharePoint
     else:
         st.info("☁️ Sign in to SharePoint using the sidebar to load data.")
 
-# ── Daily Forecast → OTF % / HTF % enrichment ────────────────────────────────
+# ── Daily Forecast → Forecast Volume / Forecast Variance enrichment ──────────
 # The forecast is persisted server-side (like the mapping): an upload by one
 # user is saved to disk and every session loads it from there — no re-upload
 # needed until a new file replaces it. Parsing/loading happens BEFORE the tabs
@@ -2112,8 +2112,9 @@ elif st.session_state.get("daily_forecast_mtime"):
     for _fc_key in ("daily_forecast_df", "daily_forecast_name", "daily_forecast_mtime"):
         st.session_state.pop(_fc_key, None)
 
-# OTF % / HTF % only calculate on a COMPLETE day of data: comparing a partial
-# (intraday) upload against a full-day forecast would understate attainment.
+# Forecast Volume always shows for the report date, but Forecast Variance
+# only calculates on a COMPLETE day of data: comparing a partial (intraday)
+# upload against a full-day forecast would understate attainment.
 # Complete = interval coverage reaches end of day (a slot at 23:00 or later)
 # and at least 46 of the 48 half-hour slots are present — the small tolerance
 # keeps a quiet overnight slot with zero calls from blocking the calculation.
@@ -2141,15 +2142,17 @@ if data_ok and _fc_data is not None and call_date:
         )
         if not _fc_day_complete:
             _fc_incomplete = (len(_fc_slots), _fc_last_slot)
-            _fc_report_date = None
 
-    if _fc_report_date is not None:
-        summary_df = add_forecast_pct(summary_df, _fc_data, _fc_report_date, "Consolidated")
+        summary_df = add_forecast_cols(
+            summary_df, _fc_data, _fc_report_date, "Consolidated",
+            with_variance=_fc_day_complete,
+        )
         for _fc_vendor in list(vendor_summaries):
             _fc_sheet = _FC_VENDOR_SHEETS.get(_fc_vendor)
             if _fc_sheet:
-                vendor_summaries[_fc_vendor] = add_forecast_pct(
-                    vendor_summaries[_fc_vendor], _fc_data, _fc_report_date, _fc_sheet
+                vendor_summaries[_fc_vendor] = add_forecast_cols(
+                    vendor_summaries[_fc_vendor], _fc_data, _fc_report_date, _fc_sheet,
+                    with_variance=_fc_day_complete,
                 )
 
 # ── Sidebar — export buttons & notes (only when data is ready) ───────────────
@@ -2304,10 +2307,10 @@ with tab1:
 
         if _fc_incomplete is not None:
             st.caption(
-                f"ℹ️ **OTF % / HTF % not calculated** — interval data for the day is "
+                f"ℹ️ **Forecast Variance not calculated** — interval data for the day is "
                 f"incomplete ({_fc_incomplete[0]} of {_FC_FULL_SLOTS} intervals loaded"
                 + (f", last interval {_fc_incomplete[1]}" if _fc_incomplete[1] else "")
-                + "). They'll appear automatically once the full day is uploaded."
+                + "). It will appear automatically once the full day is uploaded."
             )
         _display_summary(_main_df, table_key="main")
 
@@ -2905,10 +2908,10 @@ with tab7:
     st.caption(
         "Upload the **Daily Forecast** workbook (.xlsx) — one sheet per site "
         "(Consolidated, VXI, TELUS, IGT) with forecast call volumes per LOB per day. "
-        "Once loaded, the **Voice Performance Summary** tables gain **OTF %** "
-        "(Offered-to-Forecast) and **HTF %** (Handled-to-Forecast) columns — "
-        "actual offered / handled vs the forecast for the report date. "
-        "They calculate only when the day's interval data is complete "
+        "Once loaded, the **Voice Performance Summary** tables gain a "
+        "**Forecast Volume** column (the forecast for the report date) and a "
+        "**Forecast Variance** column (actual offered vs that forecast). "
+        "The variance calculates only when the day's interval data is complete "
         "(coverage through end of day, no missing intervals)."
     )
 
