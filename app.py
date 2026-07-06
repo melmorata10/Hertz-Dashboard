@@ -790,7 +790,7 @@ def _abn_driver_brief(row: pd.Series) -> str:
 def _summary_to_tsv(df: pd.DataFrame) -> str:
     """Tab-separated + formatted — plain-text fallback for clipboard."""
     display_cols = [
-        "LOB", "NCO", "NCH", "NCO %", "NCH %",
+        "LOB", "NCO", "NCH", "OTF %", "HTF %",
         "Target AHT", "AHT", "AHT Var%",
         "ABN", "Target ABN%", "ABN%",
         "Target ASA", "ASA", "Comment / Action",
@@ -805,7 +805,7 @@ def _summary_to_tsv(df: pd.DataFrame) -> str:
     for col in ("Target ASA", "ASA"):
         if col in view.columns:
             view[col] = view[col].apply(_fmt_seconds)
-    for col in ("AHT Var%", "ABN%", "Target ABN%", "NCO %", "NCH %"):
+    for col in ("AHT Var%", "ABN%", "Target ABN%", "OTF %", "HTF %"):
         if col in view.columns:
             view[col] = view[col].apply(_fmt_pct)
     for col in ("NCO", "NCH", "ABN"):
@@ -837,7 +837,7 @@ def _summary_to_html_table(
     df    = pd.concat([_lobs, _gt], ignore_index=True)
 
     display_cols = [
-        "LOB", "NCO", "NCH", "NCO %", "NCH %",
+        "LOB", "NCO", "NCH", "OTF %", "HTF %",
         "Target AHT", "AHT", "AHT Var%",
         "ABN", "Target ABN%", "ABN%",
         "Target ASA", "ASA", "Comment / Action",
@@ -875,7 +875,7 @@ def _summary_to_html_table(
     def _fmt(col, val):
         if col in ("Target AHT", "AHT"):               return _fmt_seconds_int(val)
         if col in ("Target ASA", "ASA"):               return _fmt_seconds(val)
-        if col in ("AHT Var%", "ABN%", "Target ABN%", "NCO %", "NCH %"): return _fmt_pct(val)
+        if col in ("AHT Var%", "ABN%", "Target ABN%", "OTF %", "HTF %"): return _fmt_pct(val)
         if col in ("NCO", "NCH", "ABN"):               return _fmt_int(val)
         return str(val) if pd.notna(val) else "—"
 
@@ -1176,8 +1176,8 @@ _COL_WIDTHS = {
     "LOB":         160,
     "NCO":          80,
     "NCH":          80,
-    "NCO %":        80,
-    "NCH %":        80,
+    "OTF %":        80,
+    "HTF %":        80,
     "Target AHT":   80,
     "AHT":          80,
     "AHT Var%":     80,
@@ -1226,7 +1226,7 @@ def _kpi_cards(df: pd.DataFrame):
 def _display_summary(df: pd.DataFrame, table_key: str = "main"):
     """Render the summary table. Analysis column is editable inline."""
     display_cols = [
-        "LOB", "NCO", "NCH", "NCO %", "NCH %",
+        "LOB", "NCO", "NCH", "OTF %", "HTF %",
         "Target AHT", "AHT", "AHT Var%",
         "ABN", "Target ABN%", "ABN%",
         "Target ASA", "ASA", "Analysis",
@@ -1289,7 +1289,7 @@ def _display_summary(df: pd.DataFrame, table_key: str = "main"):
     for col in ("Target ASA", "ASA"):
         if col in view.columns:
             fmt[col] = _fmt_seconds
-    for col in ("AHT Var%", "ABN%", "Target ABN%", "NCO %", "NCH %"):
+    for col in ("AHT Var%", "ABN%", "Target ABN%", "OTF %", "HTF %"):
         if col in view.columns:
             fmt[col] = _fmt_pct
     for col in ("NCO", "NCH", "ABN"):
@@ -1481,7 +1481,7 @@ def _summary_dialog(df: pd.DataFrame, table_key: str):
     # Overlay any user edits from the live data_editor
     df = _merge_editor_edits(df, table_key)
 
-    display_cols = ["LOB", "NCO", "NCH", "NCO %", "NCH %", "Target AHT", "AHT", "AHT Var%",
+    display_cols = ["LOB", "NCO", "NCH", "OTF %", "HTF %", "Target AHT", "AHT", "AHT Var%",
                     "ABN", "Target ABN%", "ABN%", "Target ASA", "ASA", "Analysis"]
     present = [c for c in display_cols if c in df.columns]
 
@@ -1521,7 +1521,7 @@ def _summary_dialog(df: pd.DataFrame, table_key: str):
     def _fmt_cell(col, val):
         if col in ("Target AHT", "AHT"):               return _fmt_seconds_int(val)
         if col in ("Target ASA", "ASA"):               return _fmt_seconds(val)
-        if col in ("AHT Var%", "ABN%", "Target ABN%", "NCO %", "NCH %"): return _fmt_pct(val)
+        if col in ("AHT Var%", "ABN%", "Target ABN%", "OTF %", "HTF %"): return _fmt_pct(val)
         if col in ("NCO", "NCH", "ABN"):               return _fmt_int(val)
         if col == "Analysis":                          return str(val) if val else ""
         return str(val) if pd.notna(val) else "—"
@@ -1530,7 +1530,7 @@ def _summary_dialog(df: pd.DataFrame, table_key: str):
     # LOB=130, 10 metrics=72px each (uniform), Analysis=450 → ratios preserved at full width.
     _DLG_W = {
         "LOB": 130, "NCO": 72, "NCH": 72,
-        "NCO %": 72, "NCH %": 72,
+        "OTF %": 72, "HTF %": 72,
         "Target AHT": 72, "AHT": 72, "AHT Var%": 72,
         "ABN": 72, "Target ABN%": 72, "ABN%": 72,
         "Target ASA": 72, "ASA": 72, "Analysis": 450,
@@ -1642,7 +1642,7 @@ def _interval_dialog(df: pd.DataFrame):
     def _fmt_cell(col, val):
         if col in ("Target AHT", "AHT"):               return _fmt_seconds_int(val)
         if col in ("Target ASA", "ASA"):               return _fmt_seconds(val)
-        if col in ("AHT Var%", "ABN%", "Target ABN%", "NCO %", "NCH %"): return _fmt_pct(val)
+        if col in ("AHT Var%", "ABN%", "Target ABN%", "OTF %", "HTF %"): return _fmt_pct(val)
         if col in ("NCO", "NCH", "ABN"):               return _fmt_int(val)
         return str(val) if pd.notna(val) else "—"
 
@@ -1847,7 +1847,7 @@ def _display_interval(df: pd.DataFrame, lob_filter: list, vendor_filter: list):
     for col in ("Target ASA", "ASA"):           # 1 decimal
         if col in view.columns:
             fmt[col] = _fmt_seconds
-    for col in ("AHT Var%", "ABN%", "Target ABN%", "NCO %", "NCH %"):
+    for col in ("AHT Var%", "ABN%", "Target ABN%", "OTF %", "HTF %"):
         if col in view.columns:
             fmt[col] = _fmt_pct
     for col in ("NCO", "NCH", "ABN"):
@@ -2074,7 +2074,7 @@ else:  # SharePoint
     else:
         st.info("☁️ Sign in to SharePoint using the sidebar to load data.")
 
-# ── Daily Forecast → NCO % / NCH % enrichment ────────────────────────────────
+# ── Daily Forecast → OTF % / HTF % enrichment ────────────────────────────────
 # The forecast is persisted server-side (like the mapping): an upload by one
 # user is saved to disk and every session loads it from there — no re-upload
 # needed until a new file replaces it. Parsing/loading happens BEFORE the tabs
@@ -2874,8 +2874,9 @@ with tab7:
     st.caption(
         "Upload the **Daily Forecast** workbook (.xlsx) — one sheet per site "
         "(Consolidated, VXI, TELUS, IGT) with forecast call volumes per LOB per day. "
-        "Once loaded, the **Voice Performance Summary** tables gain **NCO %** and "
-        "**NCH %** columns (actual offered / handled vs the forecast for the report date)."
+        "Once loaded, the **Voice Performance Summary** tables gain **OTF %** "
+        "(Offered-to-Forecast) and **HTF %** (Handled-to-Forecast) columns — "
+        "actual offered / handled vs the forecast for the report date."
     )
 
     _fc_file = st.file_uploader(

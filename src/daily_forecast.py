@@ -9,7 +9,7 @@ META_COLS = ["Year", "Month", "Week", "Date", "Weekday"]
 
 # Dashboard LOB name → forecast workbook column(s) whose volumes make it up.
 # LOBs missing here (BRST, CONFO, Roadside Lite, OPERATIONS) have no forecast
-# column and show "—" for NCO % / NCH %.
+# column and show "—" for OTF % / HTF %.
 FORECAST_LOB_MAP = {
     "Sales":                       ["Sales"],
     "CCM":                         ["CCM"],
@@ -81,17 +81,19 @@ def parse_daily_forecast(file) -> pd.DataFrame:
 
 
 def add_forecast_pct(df: pd.DataFrame, fc_df: pd.DataFrame, report_date, site: str) -> pd.DataFrame:
-    """Add "NCO %" and "NCH %" columns: actual volume ÷ forecast volume × 100.
+    """Add "OTF %" and "HTF %" columns: actual volume ÷ forecast volume × 100.
 
-    ``fc_df`` is the tidy frame from :func:`parse_daily_forecast`; the forecast
-    volume for each LOB is taken from ``site``'s sheet on ``report_date``.
-    LOBs with no forecast column (or zero forecast) show NaN. The Grand Total
-    row compares only the LOBs that have a forecast, so numerator and
-    denominator cover the same lines of business.
+    OTF = Offered-to-Forecast (NCO ÷ forecast), HTF = Handled-to-Forecast
+    (NCH ÷ forecast). ``fc_df`` is the tidy frame from
+    :func:`parse_daily_forecast`; the forecast volume for each LOB is taken
+    from ``site``'s sheet on ``report_date``. LOBs with no forecast column
+    (or zero forecast) show NaN. The Grand Total row compares only the LOBs
+    that have a forecast, so numerator and denominator cover the same lines
+    of business.
     """
     out = df.copy()
-    out["NCO %"] = float("nan")
-    out["NCH %"] = float("nan")
+    out["OTF %"] = float("nan")
+    out["HTF %"] = float("nan")
 
     sel = fc_df[(fc_df["Site"] == site) & (fc_df["Date"] == report_date)]
     if not sel.empty:
@@ -106,26 +108,26 @@ def add_forecast_pct(df: pd.DataFrame, fc_df: pd.DataFrame, report_date, site: s
             nco, nch = row.get("NCO"), row.get("NCH")
             if fc <= 0 or pd.isna(nco):
                 continue
-            out.at[i, "NCO %"] = nco / fc * 100
+            out.at[i, "OTF %"] = nco / fc * 100
             tot_fc += fc
             tot_nco += nco
             if pd.notna(nch):
-                out.at[i, "NCH %"] = nch / fc * 100
+                out.at[i, "HTF %"] = nch / fc * 100
                 tot_nch += nch
         if tot_fc > 0:
             gt_mask = out["LOB"] == "Grand Total"
-            out.loc[gt_mask, "NCO %"] = tot_nco / tot_fc * 100
-            out.loc[gt_mask, "NCH %"] = tot_nch / tot_fc * 100
+            out.loc[gt_mask, "OTF %"] = tot_nco / tot_fc * 100
+            out.loc[gt_mask, "HTF %"] = tot_nch / tot_fc * 100
 
     # Keep the new columns right after NCH (matters for CSV export order)
     cols = list(out.columns)
-    for c in ("NCO %", "NCH %"):
+    for c in ("OTF %", "HTF %"):
         cols.remove(c)
     if "NCH" in cols:
         at = cols.index("NCH") + 1
-        cols[at:at] = ["NCO %", "NCH %"]
+        cols[at:at] = ["OTF %", "HTF %"]
     else:
-        cols += ["NCO %", "NCH %"]
+        cols += ["OTF %", "HTF %"]
     return out[cols]
 
 
