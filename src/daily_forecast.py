@@ -13,7 +13,9 @@ META_COLS = ["Year", "Month", "Week", "Date", "Weekday"]
 FORECAST_LOB_MAP = {
     "Sales":                       ["Sales"],
     "CCM":                         ["CCM"],
-    "International":               ["International"],
+    # CSSD (= CUSTOMER SPECIAL SERVICES DEPARTMENT) queues report under the
+    # International LOB, so its forecast column counts toward International.
+    "International":               ["International", "CUSTOMER SPECIAL SERVICES DEPARTMENT"],
     "Languages":                   ["Multi-Language"],
     "Billing/Disputes":            ["Billing/Disputes"],
     "TNC Billing and Dispute":     ["TNC Billing and Dispute"],
@@ -22,7 +24,6 @@ FORECAST_LOB_MAP = {
     "Fleet Desk":                  ["Fleet"],
     "SPOC":                        ["SPOC"],
     "First Choice Offered":        ["First Choice"],
-    "Executive Customer Services": ["CUSTOMER SPECIAL SERVICES DEPARTMENT"],
     "Roadside Services":           ["Roadside Hertz", "Roadside - Dollar Thrifty"],
     "Vehicle Control":             ["Vehicle Control"],
     "Rental Extensions":           ["REX Retail"],
