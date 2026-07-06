@@ -2484,8 +2484,11 @@ with tab3:
         n = len(_custom)
         st.success(f"✅ **Custom mapping active** — {n:,} skill entries in use")
     else:
-        n = len(_BUILTIN_MAPPING)
-        st.info(f"ℹ️ **Built-in mapping active** — {n:,} skill entries")
+        st.warning(
+            "⚠️ **No mapping loaded** — import your mapping Excel below (or add rows "
+            "manually) and click **💾 Apply**. Until then, calls can't be assigned "
+            "to a LOB and the summary tables will be empty."
+        )
 
     st.markdown("---")
 
@@ -2542,8 +2545,9 @@ with tab3:
     # ── Delete saved mapping ──────────────────────────────────────────────────
     with st.expander("🗑️ Delete saved mapping", expanded=False):
         st.markdown(
-            "Deletes the saved custom mapping **for all users** and reverts the dashboard "
-            "to the **built-in mapping**. To replace it with a file instead, use "
+            "Deletes the saved mapping **for all users**, leaving the mapping **empty** — "
+            "there is no built-in fallback, so calls report under *Unknown* until a new "
+            "mapping is imported and applied. To replace it with a file in one step, use "
             "**🆕 Start fresh** in the import section above."
         )
         _map_del_ok = st.checkbox(
