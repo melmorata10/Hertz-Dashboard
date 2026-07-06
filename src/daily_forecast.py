@@ -96,7 +96,7 @@ def add_forecast_cols(
     """Add "Forecast Volume" and "Forecast Variance" columns.
 
     Forecast Volume is the forecast call volume itself for ``report_date``;
-    Forecast Variance is that volume vs actual offered (forecast ÷ NCO × 100).
+    Forecast Variance is actual offered vs that volume (NCO ÷ forecast × 100).
     ``fc_df`` is the tidy frame from :func:`parse_daily_forecast`; volumes come
     from ``site``'s sheet. LOBs with no forecast column (or zero forecast)
     show NaN. Pass ``with_variance=False`` on a partial (intraday) day — the
@@ -125,15 +125,15 @@ def add_forecast_cols(
             out.at[i, "Forecast Volume"] = fc
             vol_tot += fc
             nco = row.get("NCO")
-            if with_variance and pd.notna(nco) and nco > 0:
-                out.at[i, "Forecast Variance"] = fc / nco * 100
+            if with_variance and pd.notna(nco):
+                out.at[i, "Forecast Variance"] = nco / fc * 100
                 var_fc += fc
                 var_nco += nco
         gt_mask = out["LOB"] == "Grand Total"
         if vol_tot > 0:
             out.loc[gt_mask, "Forecast Volume"] = vol_tot
-        if var_nco > 0:
-            out.loc[gt_mask, "Forecast Variance"] = var_fc / var_nco * 100
+        if var_fc > 0:
+            out.loc[gt_mask, "Forecast Variance"] = var_nco / var_fc * 100
 
     # Only keep columns that actually carry data; place them right after NCH
     keep = [c for c in ("Forecast Volume", "Forecast Variance") if out[c].notna().any()]
