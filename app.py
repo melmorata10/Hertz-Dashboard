@@ -12,6 +12,10 @@ from src.agent_aht import (
     build_agent_aht_workbook,
     report_filename as _aht_report_filename,
 )
+from src.daily_forecast import (
+    parse_daily_forecast, forecast_pivot, add_forecast_pct,
+    FORECAST_VENDOR_SHEETS as _FC_VENDOR_SHEETS,
+)
 from src.data_processor import prepare
 from src.excel_export import (
     build_asa_report_workbook,
@@ -784,7 +788,7 @@ def _abn_driver_brief(row: pd.Series) -> str:
 def _summary_to_tsv(df: pd.DataFrame) -> str:
     """Tab-separated + formatted — plain-text fallback for clipboard."""
     display_cols = [
-        "LOB", "NCO", "NCH",
+        "LOB", "NCO", "NCH", "NCO %", "NCH %",
         "Target AHT", "AHT", "AHT Var%",
         "ABN", "Target ABN%", "ABN%",
         "Target ASA", "ASA", "Comment / Action",
@@ -799,7 +803,7 @@ def _summary_to_tsv(df: pd.DataFrame) -> str:
     for col in ("Target ASA", "ASA"):
         if col in view.columns:
             view[col] = view[col].apply(_fmt_seconds)
-    for col in ("AHT Var%", "ABN%", "Target ABN%"):
+    for col in ("AHT Var%", "ABN%", "Target ABN%", "NCO %", "NCH %"):
         if col in view.columns:
             view[col] = view[col].apply(_fmt_pct)
     for col in ("NCO", "NCH", "ABN"):
@@ -831,7 +835,7 @@ def _summary_to_html_table(
     df    = pd.concat([_lobs, _gt], ignore_index=True)
 
     display_cols = [
-        "LOB", "NCO", "NCH",
+        "LOB", "NCO", "NCH", "NCO %", "NCH %",
         "Target AHT", "AHT", "AHT Var%",
         "ABN", "Target ABN%", "ABN%",
         "Target ASA", "ASA", "Comment / Action",
@@ -869,7 +873,7 @@ def _summary_to_html_table(
     def _fmt(col, val):
         if col in ("Target AHT", "AHT"):               return _fmt_seconds_int(val)
         if col in ("Target ASA", "ASA"):               return _fmt_seconds(val)
-        if col in ("AHT Var%", "ABN%", "Target ABN%"): return _fmt_pct(val)
+        if col in ("AHT Var%", "ABN%", "Target ABN%", "NCO %", "NCH %"): return _fmt_pct(val)
         if col in ("NCO", "NCH", "ABN"):               return _fmt_int(val)
         return str(val) if pd.notna(val) else "—"
 
@@ -1170,6 +1174,8 @@ _COL_WIDTHS = {
     "LOB":         160,
     "NCO":          80,
     "NCH":          80,
+    "NCO %":        80,
+    "NCH %":        80,
     "Target AHT":   80,
     "AHT":          80,
     "AHT Var%":     80,
@@ -1218,7 +1224,7 @@ def _kpi_cards(df: pd.DataFrame):
 def _display_summary(df: pd.DataFrame, table_key: str = "main"):
     """Render the summary table. Analysis column is editable inline."""
     display_cols = [
-        "LOB", "NCO", "NCH",
+        "LOB", "NCO", "NCH", "NCO %", "NCH %",
         "Target AHT", "AHT", "AHT Var%",
         "ABN", "Target ABN%", "ABN%",
         "Target ASA", "ASA", "Analysis",
@@ -1281,7 +1287,7 @@ def _display_summary(df: pd.DataFrame, table_key: str = "main"):
     for col in ("Target ASA", "ASA"):
         if col in view.columns:
             fmt[col] = _fmt_seconds
-    for col in ("AHT Var%", "ABN%", "Target ABN%"):
+    for col in ("AHT Var%", "ABN%", "Target ABN%", "NCO %", "NCH %"):
         if col in view.columns:
             fmt[col] = _fmt_pct
     for col in ("NCO", "NCH", "ABN"):
@@ -1473,7 +1479,7 @@ def _summary_dialog(df: pd.DataFrame, table_key: str):
     # Overlay any user edits from the live data_editor
     df = _merge_editor_edits(df, table_key)
 
-    display_cols = ["LOB", "NCO", "NCH", "Target AHT", "AHT", "AHT Var%",
+    display_cols = ["LOB", "NCO", "NCH", "NCO %", "NCH %", "Target AHT", "AHT", "AHT Var%",
                     "ABN", "Target ABN%", "ABN%", "Target ASA", "ASA", "Analysis"]
     present = [c for c in display_cols if c in df.columns]
 
@@ -1513,7 +1519,7 @@ def _summary_dialog(df: pd.DataFrame, table_key: str):
     def _fmt_cell(col, val):
         if col in ("Target AHT", "AHT"):               return _fmt_seconds_int(val)
         if col in ("Target ASA", "ASA"):               return _fmt_seconds(val)
-        if col in ("AHT Var%", "ABN%", "Target ABN%"): return _fmt_pct(val)
+        if col in ("AHT Var%", "ABN%", "Target ABN%", "NCO %", "NCH %"): return _fmt_pct(val)
         if col in ("NCO", "NCH", "ABN"):               return _fmt_int(val)
         if col == "Analysis":                          return str(val) if val else ""
         return str(val) if pd.notna(val) else "—"
@@ -1522,6 +1528,7 @@ def _summary_dialog(df: pd.DataFrame, table_key: str):
     # LOB=130, 10 metrics=72px each (uniform), Analysis=450 → ratios preserved at full width.
     _DLG_W = {
         "LOB": 130, "NCO": 72, "NCH": 72,
+        "NCO %": 72, "NCH %": 72,
         "Target AHT": 72, "AHT": 72, "AHT Var%": 72,
         "ABN": 72, "Target ABN%": 72, "ABN%": 72,
         "Target ASA": 72, "ASA": 72, "Analysis": 450,
@@ -1633,7 +1640,7 @@ def _interval_dialog(df: pd.DataFrame):
     def _fmt_cell(col, val):
         if col in ("Target AHT", "AHT"):               return _fmt_seconds_int(val)
         if col in ("Target ASA", "ASA"):               return _fmt_seconds(val)
-        if col in ("AHT Var%", "ABN%", "Target ABN%"): return _fmt_pct(val)
+        if col in ("AHT Var%", "ABN%", "Target ABN%", "NCO %", "NCH %"): return _fmt_pct(val)
         if col in ("NCO", "NCH", "ABN"):               return _fmt_int(val)
         return str(val) if pd.notna(val) else "—"
 
@@ -1838,7 +1845,7 @@ def _display_interval(df: pd.DataFrame, lob_filter: list, vendor_filter: list):
     for col in ("Target ASA", "ASA"):           # 1 decimal
         if col in view.columns:
             fmt[col] = _fmt_seconds
-    for col in ("AHT Var%", "ABN%", "Target ABN%"):
+    for col in ("AHT Var%", "ABN%", "Target ABN%", "NCO %", "NCH %"):
         if col in view.columns:
             fmt[col] = _fmt_pct
     for col in ("NCO", "NCH", "ABN"):
@@ -2065,6 +2072,40 @@ else:  # SharePoint
     else:
         st.info("☁️ Sign in to SharePoint using the sidebar to load data.")
 
+# ── Daily Forecast → NCO % / NCH % enrichment ────────────────────────────────
+# Parse the Daily Forecast upload BEFORE the tabs render so the Voice
+# Performance Summary tables can use it on the same rerun. The uploader widget
+# itself lives in the Daily Forecast tab; its value is read from session state.
+_fc_upload = st.session_state.get("daily_forecast_upload")
+if _fc_upload is not None:
+    _fc_sig = (_fc_upload.name, getattr(_fc_upload, "size", None))
+    if st.session_state.get("daily_forecast_sig") != _fc_sig:
+        try:
+            st.session_state["daily_forecast_df"] = parse_daily_forecast(_fc_upload)
+            st.session_state["daily_forecast_name"] = _fc_upload.name
+            st.session_state["daily_forecast_sig"] = _fc_sig
+            st.session_state.pop("daily_forecast_err", None)
+        except Exception as _fc_exc:
+            st.session_state["daily_forecast_err"] = str(_fc_exc)
+            st.session_state.pop("daily_forecast_df", None)
+            st.session_state.pop("daily_forecast_sig", None)
+
+_fc_data = st.session_state.get("daily_forecast_df")
+_fc_report_date = None
+if data_ok and _fc_data is not None and call_date:
+    try:
+        _fc_report_date = pd.to_datetime(call_date).date()
+    except Exception:
+        _fc_report_date = None
+    if _fc_report_date is not None:
+        summary_df = add_forecast_pct(summary_df, _fc_data, _fc_report_date, "Consolidated")
+        for _fc_vendor in list(vendor_summaries):
+            _fc_sheet = _FC_VENDOR_SHEETS.get(_fc_vendor)
+            if _fc_sheet:
+                vendor_summaries[_fc_vendor] = add_forecast_pct(
+                    vendor_summaries[_fc_vendor], _fc_data, _fc_report_date, _fc_sheet
+                )
+
 # ── Sidebar — export buttons & notes (only when data is ready) ───────────────
 if data_ok and not summary_df.empty:
     import json as _json
@@ -2178,13 +2219,14 @@ if data_ok:
         unsafe_allow_html=True,
     )
 
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "📊 Voice Performance Summary",
     "⏱️ Per Interval",
     "🗺️ Mapping Manager",
     "🎯 Targets Editor",
     "📑 ASA Report Export",
     "🧑‍💼 Agent AHT",
+    "📅 Daily Forecast",
 ])
 
 # ── Tab 1: Voice Performance Summary ─────────────────────────────────────────
@@ -2803,3 +2845,73 @@ with tab6:
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         use_container_width=True,
                     )
+
+# ── Tab 7: Daily Forecast ─────────────────────────────────────────────────────
+with tab7:
+    st.subheader("Daily Forecast")
+    st.caption(
+        "Upload the **Daily Forecast** workbook (.xlsx) — one sheet per site "
+        "(Consolidated, VXI, TELUS, IGT) with forecast call volumes per LOB per day. "
+        "Once loaded, the **Voice Performance Summary** tables gain **NCO %** and "
+        "**NCH %** columns (actual offered / handled vs the forecast for the report date)."
+    )
+
+    _fc_file = st.file_uploader(
+        "Upload Daily Forecast (.xlsx)", type=["xlsx"], key="daily_forecast_upload",
+    )
+
+    if st.session_state.get("daily_forecast_err"):
+        st.error(f"Could not read the file: {st.session_state['daily_forecast_err']}")
+
+    _fc_df = st.session_state.get("daily_forecast_df")
+    if _fc_df is None or _fc_df.empty:
+        st.info("⬆️ Upload the Daily Forecast workbook to see the forecast view.")
+    else:
+        _fc_dates = sorted(_fc_df["Date"].unique())
+        st.success(
+            f"✅ **{st.session_state.get('daily_forecast_name', 'Daily Forecast')}** loaded — "
+            f"{_fc_dates[0].strftime('%b %d, %Y')} to {_fc_dates[-1].strftime('%b %d, %Y')} · "
+            f"{len(_fc_dates)} days · {_fc_df['Site'].nunique()} sites"
+        )
+
+        _fc_sites = list(dict.fromkeys(_fc_df["Site"]))
+        _fc_months = sorted({(d.year, d.month) for d in _fc_dates})
+
+        _fc_c1, _fc_c2 = st.columns([2, 3])
+        with _fc_c1:
+            _fc_site_sel = st.selectbox("Site", _fc_sites, key="daily_forecast_site")
+        with _fc_c2:
+            _fc_month_sel = st.multiselect(
+                "Month", _fc_months,
+                default=_fc_months,
+                format_func=lambda ym: pd.Timestamp(ym[0], ym[1], 1).strftime("%B %Y"),
+                key="daily_forecast_months",
+            )
+
+        _fc_sel = _fc_df[
+            (_fc_df["Site"] == _fc_site_sel)
+            & _fc_df["Date"].map(lambda d: (d.year, d.month) in set(_fc_month_sel))
+        ]
+        if _fc_sel.empty:
+            st.warning("No data for the selected filters.")
+        else:
+            _fc_view = forecast_pivot(_fc_sel)
+            st.caption(
+                f"{len(_fc_view) - 1} days · volumes rounded to whole calls · "
+                "LOBs with zero volume for this site are hidden"
+            )
+            st.dataframe(
+                _fc_view,
+                use_container_width=True, hide_index=True,
+                height=min(38 * (len(_fc_view) + 1) + 4, 620),
+                column_config={
+                    c: st.column_config.NumberColumn(format="%d")
+                    for c in _fc_view.columns if c != "Date"
+                },
+            )
+            st.download_button(
+                "⬇️ Download Forecast View (.csv)",
+                data=_fc_view.to_csv(index=False).encode("utf-8-sig"),
+                file_name=f"daily_forecast_{_fc_site_sel.lower()}.csv",
+                mime="text/csv",
+            )
