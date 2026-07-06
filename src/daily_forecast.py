@@ -118,8 +118,14 @@ def add_forecast_cols(
         vol_tot = var_fc = var_nco = 0.0
         for i, row in out.iterrows():
             lob = str(row.get("LOB", ""))
+            if lob == "Grand Total":
+                continue
             fc_cols = lob_map.get(lob)
-            if lob == "Grand Total" or not fc_cols:
+            # Fallback: a forecast column with exactly the LOB's name counts
+            # toward it automatically — no mapping entry or link rule needed.
+            if not fc_cols and lob in vols:
+                fc_cols = [lob]
+            if not fc_cols:
                 continue
             fc = sum(vols.get(c, 0.0) for c in fc_cols)
             if fc <= 0:

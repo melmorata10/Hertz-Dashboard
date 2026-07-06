@@ -38,16 +38,10 @@ DEFAULT_RULES = [
         "Notes": "TNC flavour of the CSCC rename",
     },
     {
-        "Rule Type": RULE_TYPE_LINK,
+        "Rule Type": RULE_TYPE_RENAME,
         "From": "CUSTOMER SPECIAL SERVICES DEPARTMENT",
-        "To": "International",
-        "Notes": "CSSD queues report under the International LOB",
-    },
-    {
-        "Rule Type": RULE_TYPE_LINK,
-        "From": "CSSD",
-        "To": "International",
-        "Notes": "Newer forecast files shorten the CSSD column name",
+        "To": "CSSD",
+        "Notes": "Same department — older forecast files spell it out in full",
     },
 ]
 
