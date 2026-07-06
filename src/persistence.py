@@ -23,6 +23,7 @@ _MAPPING_FILE    = _DATA_DIR / "custom_mapping.json"
 _MAPPING_DF_FILE = _DATA_DIR / "mapping_df.json"
 _TARGETS_FILE    = _DATA_DIR / "custom_targets.json"
 _FORECAST_FILE   = _DATA_DIR / "daily_forecast.json"
+_RULES_FILE      = _DATA_DIR / "exception_rules.json"
 
 
 def _ensure_dir() -> None:
@@ -139,6 +140,25 @@ def clear_targets() -> None:
     """Remove persisted targets (revert to built-in)."""
     with _LOCK:
         _TARGETS_FILE.unlink(missing_ok=True)
+
+
+def load_exception_rules() -> list | None:
+    """Return the saved exception/convention rules, or None if not saved."""
+    try:
+        data = json.loads(_RULES_FILE.read_text(encoding="utf-8"))
+        return data if isinstance(data, list) else None
+    except Exception:
+        return None
+
+
+def save_exception_rules(rules: list) -> None:
+    """Persist the exception rules so every session shares them."""
+    _ensure_dir()
+    with _LOCK:
+        _RULES_FILE.write_text(
+            json.dumps(rules, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
 
 
 def save_daily_forecast(df: pd.DataFrame, name: str) -> None:

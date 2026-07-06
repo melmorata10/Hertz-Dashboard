@@ -16,7 +16,15 @@ from src.daily_forecast import (
     parse_daily_forecast, forecast_pivot, add_forecast_cols,
     FORECAST_VENDOR_SHEETS as _FC_VENDOR_SHEETS,
     SITE_RENAME as _FC_SITE_RENAME,
-    LOB_RENAME as _FC_LOB_RENAME,
+)
+from src.exception_rules import (
+    RULE_TYPES as _RULE_TYPES,
+    RULE_COLUMNS as _RULE_COLUMNS,
+    DEFAULT_RULES as _DEFAULT_RULES,
+    clean_rules as _clean_rules,
+    apply_to_mapping as _rules_apply_to_mapping,
+    apply_to_forecast_df as _rules_apply_to_forecast,
+    build_forecast_lob_map as _rules_forecast_lob_map,
 )
 from src.data_processor import prepare
 from src.excel_export import (
@@ -32,6 +40,7 @@ from src.persistence import (
     load_targets, save_targets, clear_targets, load_targets_mtime,
     load_daily_forecast, save_daily_forecast,
     clear_daily_forecast, load_daily_forecast_mtime,
+    load_exception_rules, save_exception_rules,
 )
 
 # SharePoint connector
@@ -77,6 +86,13 @@ if "mapping_df" not in st.session_state:
     _persisted_df = load_mapping_df()
     if _persisted_df is not None:
         st.session_state["mapping_df"] = _persisted_df
+
+if "exception_rules" not in st.session_state:
+    _persisted_rules = load_exception_rules()
+    st.session_state["exception_rules"] = (
+        _persisted_rules if _persisted_rules is not None
+        else [dict(r) for r in _DEFAULT_RULES]
+    )
 
 # Live-sync targets: on every rerun, check if the disk file is newer than what
 # this session last loaded.  If so, reload — this means a change saved by any
@@ -2079,6 +2095,11 @@ if data_source == "📁 Upload CSV":
                 except Exception:
                     call_date = None
             _active_mapping  = st.session_state.get("custom_mapping")   # None → use built-in
+            if _active_mapping:
+                # Exception rules: LOB renames apply before aggregation
+                _active_mapping = _rules_apply_to_mapping(
+                    _active_mapping, st.session_state.get("exception_rules", [])
+                )
             _active_targets  = st.session_state.get("custom_targets")   # None → use built-in
             summary_df, vendor_summaries, interval_df = prepare(
                 raw, custom_mapping=_active_mapping, custom_targets=_active_targets
@@ -2117,6 +2138,10 @@ else:  # SharePoint
                 except Exception:
                     call_date = None
             _active_mapping  = st.session_state.get("custom_mapping")
+            if _active_mapping:
+                _active_mapping = _rules_apply_to_mapping(
+                    _active_mapping, st.session_state.get("exception_rules", [])
+                )
             _active_targets  = st.session_state.get("custom_targets")
             summary_df, vendor_summaries, interval_df = prepare(
                 _raw_sp, custom_mapping=_active_mapping, custom_targets=_active_targets
@@ -2165,11 +2190,10 @@ if _fc_disk_mtime > 0:
         _fc_loaded = load_daily_forecast()
         if _fc_loaded is not None:
             _fc_loaded_df, _fc_loaded_name = _fc_loaded
-            # Forecasts saved before a rename (e.g. IGT → ATAIN, CSCC →
-            # Billing/Disputes) keep the old names on disk — normalize on
-            # the way in.
+            # Forecasts saved before a sheet rename (e.g. IGT → ATAIN) keep
+            # the old site name on disk — normalize on the way in. LOB
+            # renames are handled live by the exception rules.
             _fc_loaded_df["Site"] = _fc_loaded_df["Site"].replace(_FC_SITE_RENAME)
-            _fc_loaded_df["LOB"] = _fc_loaded_df["LOB"].replace(_FC_LOB_RENAME)
             st.session_state["daily_forecast_df"] = _fc_loaded_df
             st.session_state["daily_forecast_name"] = _fc_loaded_name
             st.session_state["daily_forecast_mtime"] = _fc_disk_mtime
@@ -2182,7 +2206,15 @@ elif st.session_state.get("daily_forecast_mtime"):
 # the rest of the dashboard) the day is finished, so actuals vs the full-day
 # forecast is a fair comparison. For a same-day (intraday) load neither
 # column is added.
-_fc_data = st.session_state.get("daily_forecast_df")
+# Exception rules are applied to the forecast on the fly: LOB renames adjust
+# the labels, link rules adjust which forecast column feeds which LOB.
+_fc_rules = st.session_state.get("exception_rules", [])
+_fc_saved_df = st.session_state.get("daily_forecast_df")
+_fc_data = (
+    _rules_apply_to_forecast(_fc_saved_df, _fc_rules)
+    if _fc_saved_df is not None else None
+)
+_fc_lob_map = _rules_forecast_lob_map(_fc_rules)
 _fc_report_date = None
 _fc_not_past: str | None = None   # report date label when it isn't past yet
 if data_ok and _fc_data is not None and call_date:
@@ -2195,12 +2227,14 @@ if data_ok and _fc_data is not None and call_date:
         if _fc_report_date < _fc_today:
             summary_df = add_forecast_cols(
                 summary_df, _fc_data, _fc_report_date, "Consolidated",
+                lob_map=_fc_lob_map,
             )
             for _fc_vendor in list(vendor_summaries):
                 _fc_sheet = _FC_VENDOR_SHEETS.get(_fc_vendor)
                 if _fc_sheet:
                     vendor_summaries[_fc_vendor] = add_forecast_cols(
                         vendor_summaries[_fc_vendor], _fc_data, _fc_report_date, _fc_sheet,
+                        lob_map=_fc_lob_map,
                     )
         else:
             _fc_not_past = _fc_report_date.strftime("%b %d, %Y")
@@ -2318,7 +2352,7 @@ if data_ok:
         unsafe_allow_html=True,
     )
 
-tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
     "📊 Voice Performance Summary",
     "⏱️ Per Interval",
     "🗺️ Mapping Manager",
@@ -2326,6 +2360,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "📑 ASA Report Export",
     "🧑‍💼 Agent AHT",
     "📅 Daily Forecast",
+    "⚖️ Exception Rules",
 ])
 
 # ── Tab 1: Voice Performance Summary ─────────────────────────────────────────
@@ -3037,7 +3072,7 @@ with tab7:
     if st.session_state.get("daily_forecast_err"):
         st.error(f"Could not read the file: {st.session_state['daily_forecast_err']}")
 
-    _fc_df = st.session_state.get("daily_forecast_df")
+    _fc_df = _fc_data   # saved forecast with exception rules applied
     if _fc_df is None or _fc_df.empty:
         st.info("⬆️ Upload the Daily Forecast workbook to see the forecast view.")
     else:
@@ -3105,3 +3140,70 @@ with tab7:
                 file_name=f"daily_forecast_{_fc_site_sel.lower()}.csv",
                 mime="text/csv",
             )
+
+# ── Tab 8: Exception Rules ────────────────────────────────────────────────────
+with tab8:
+    st.subheader("Exception / Convention Rules")
+    st.caption(
+        "Teach the dashboard your naming conventions — rules are saved for **all users** "
+        "and applied everywhere (summary tables, forecast columns, Daily Forecast tab). "
+        "Two rule types:  \n"
+        "• **Rename LOB** — every occurrence of **From** (in the skill mapping or the "
+        "forecast workbook) is treated and shown as **To**. "
+        "Example: *CSCC → Billing/Disputes*.  \n"
+        "• **Forecast → LOB link** — the forecast workbook column **From** counts toward "
+        "the dashboard LOB **To** when computing Forecast Volume / Forecast Variance. "
+        "Example: *CUSTOMER SPECIAL SERVICES DEPARTMENT → International*."
+    )
+
+    _rules_list = st.session_state.get("exception_rules", [])
+    _rules_df = pd.DataFrame(_rules_list, columns=_RULE_COLUMNS) if _rules_list \
+        else pd.DataFrame(columns=_RULE_COLUMNS)
+
+    _rules_rev = st.session_state.setdefault("exception_rules_rev", 0)
+    _rules_edited = st.data_editor(
+        _rules_df,
+        column_config={
+            "Rule Type": st.column_config.SelectboxColumn(
+                "Rule Type", options=_RULE_TYPES, width=180, required=True,
+            ),
+            "From": st.column_config.TextColumn(
+                "From", width=300,
+                help="Label as it appears in the source (mapping LOB or forecast column)",
+            ),
+            "To": st.column_config.TextColumn(
+                "To", width=220,
+                help="Label / LOB the dashboard should use instead",
+            ),
+            "Notes": st.column_config.TextColumn("Notes", width=340),
+        },
+        num_rows="dynamic",
+        hide_index=True,
+        use_container_width=True,
+        key=f"exception_rules_editor_{_rules_rev}",
+    )
+
+    _r_apply, _r_reset, _r_info = st.columns([1, 1, 3])
+    with _r_apply:
+        if st.button("💾 Apply Rules", type="primary", use_container_width=True,
+                     key="rules_apply_btn"):
+            _new_rules = _clean_rules(_rules_edited.to_dict("records"))
+            st.session_state["exception_rules"] = _new_rules
+            save_exception_rules(_new_rules)
+            st.session_state["exception_rules_rev"] += 1
+            st.rerun()
+    with _r_reset:
+        if st.button("↩️ Reset to defaults", use_container_width=True,
+                     key="rules_reset_btn"):
+            _def_rules = [dict(r) for r in _DEFAULT_RULES]
+            st.session_state["exception_rules"] = _def_rules
+            save_exception_rules(_def_rules)
+            st.session_state["exception_rules_rev"] += 1
+            st.rerun()
+    with _r_info:
+        _n_ren = sum(1 for r in _rules_list if r.get("Rule Type") == _RULE_TYPES[0])
+        st.caption(
+            f"**{len(_rules_list)} rule(s) active** — {_n_ren} rename, "
+            f"{len(_rules_list) - _n_ren} forecast link. "
+            "Use the ➕ row to add a rule; incomplete rows (blank From/To) are ignored."
+        )

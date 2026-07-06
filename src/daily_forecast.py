@@ -13,12 +13,10 @@ META_COLS = ["Year", "Month", "Week", "Date", "Weekday"]
 FORECAST_LOB_MAP = {
     "Sales":                       ["Sales"],
     "CCM":                         ["CCM"],
-    # CSSD (= CUSTOMER SPECIAL SERVICES DEPARTMENT) queues report under the
-    # International LOB, so its forecast column counts toward International.
-    "International":               ["International", "CUSTOMER SPECIAL SERVICES DEPARTMENT"],
+    "International":               ["International"],
     "Languages":                   ["Multi-Language"],
-    "Billing/Disputes":            ["Billing/Disputes"],
-    "TNC Billing and Dispute":     ["TNC Billing and Dispute"],
+    "Billing/Disputes":            ["CSCC"],
+    "TNC Billing and Dispute":     ["CSCC TNC"],
     "FNOL":                        ["FNOL"],
     "HRD":                         ["HRD"],
     "Fleet Desk":                  ["Fleet"],
@@ -35,12 +33,6 @@ FORECAST_LOB_MAP = {
 # Workbook sheet name → site/vendor name used on the dashboard.
 # The IGT sheet is the ATAIN vendor's forecast.
 SITE_RENAME = {"IGT": "ATAIN"}
-
-# Workbook LOB column → LOB name used on the dashboard.
-LOB_RENAME = {
-    "CSCC":     "Billing/Disputes",
-    "CSCC TNC": "TNC Billing and Dispute",
-}
 
 # Vendor table on the dashboard → site in the parsed forecast (after
 # SITE_RENAME). The main (all-vendor) table uses the Consolidated sheet;
@@ -84,7 +76,6 @@ def parse_daily_forecast(file) -> pd.DataFrame:
     df["Week"] = pd.to_datetime(df["Week"], errors="coerce").dt.date
     df["Forecast"] = pd.to_numeric(df["Forecast"], errors="coerce").fillna(0.0)
     df["LOB"] = df["LOB"].str.replace(r"\.\d+$", "", regex=True).str.strip()
-    df["LOB"] = df["LOB"].replace(LOB_RENAME)
 
     df = df.groupby(["Site", "Date", "LOB"], as_index=False, sort=False).agg(
         Week=("Week", "first"),
@@ -100,6 +91,7 @@ def add_forecast_cols(
     report_date,
     site: str,
     with_variance: bool = True,
+    lob_map: dict = None,
 ) -> pd.DataFrame:
     """Add "Forecast Volume" and "Forecast Variance" columns.
 
@@ -114,6 +106,8 @@ def add_forecast_cols(
     Grand Total variance compares only the LOBs that have a forecast, so
     numerator and denominator cover the same lines of business.
     """
+    if lob_map is None:
+        lob_map = FORECAST_LOB_MAP
     out = df.copy()
     out["Forecast Volume"] = float("nan")
     out["Forecast Variance"] = float("nan")
@@ -124,7 +118,7 @@ def add_forecast_cols(
         vol_tot = var_fc = var_nco = 0.0
         for i, row in out.iterrows():
             lob = str(row.get("LOB", ""))
-            fc_cols = FORECAST_LOB_MAP.get(lob)
+            fc_cols = lob_map.get(lob)
             if lob == "Grand Total" or not fc_cols:
                 continue
             fc = sum(vols.get(c, 0.0) for c in fc_cols)
