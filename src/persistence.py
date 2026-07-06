@@ -166,6 +166,15 @@ def save_exception_rules(text: str, rules: list) -> None:
         )
 
 
+def load_exception_rules_mtime() -> float:
+    """Modification time of the saved rules, or 0.0 if absent — lets a session
+    detect that another user applied new rules and live-reload them."""
+    try:
+        return _RULES_FILE.stat().st_mtime
+    except Exception:
+        return 0.0
+
+
 def save_daily_forecast(df: pd.DataFrame, name: str) -> None:
     """Persist the parsed Daily Forecast frame so every session shares it."""
     _ensure_dir()

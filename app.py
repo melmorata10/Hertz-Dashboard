@@ -42,7 +42,7 @@ from src.persistence import (
     load_targets, save_targets, clear_targets, load_targets_mtime,
     load_daily_forecast, save_daily_forecast,
     clear_daily_forecast, load_daily_forecast_mtime,
-    load_exception_rules, save_exception_rules,
+    load_exception_rules, save_exception_rules, load_exception_rules_mtime,
 )
 
 # SharePoint connector
@@ -89,7 +89,14 @@ if "mapping_df" not in st.session_state:
     if _persisted_df is not None:
         st.session_state["mapping_df"] = _persisted_df
 
-if "exception_rules" not in st.session_state:
+# Live-sync exception rules (same mechanism as targets): reload whenever the
+# disk file is newer than what this session last loaded, so rules applied by
+# any user reach every open session without a refresh.
+_disk_rules_mtime = load_exception_rules_mtime()
+if (
+    "exception_rules" not in st.session_state
+    or _disk_rules_mtime != st.session_state.get("_rules_mtime", -1.0)
+):
     _persisted_rules = load_exception_rules()
     if _persisted_rules is None:
         _seed_rules = [dict(r) for r in _DEFAULT_RULES]
@@ -100,6 +107,7 @@ if "exception_rules" not in st.session_state:
         st.session_state["exception_rules_text"] = (
             _persisted_rules.get("text") or _rules_to_text(_persisted_rules["rules"])
         )
+    st.session_state["_rules_mtime"] = _disk_rules_mtime
 
 # Live-sync targets: on every rerun, check if the disk file is newer than what
 # this session last loaded.  If so, reload — this means a change saved by any
