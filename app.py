@@ -2112,13 +2112,37 @@ elif st.session_state.get("daily_forecast_mtime"):
     for _fc_key in ("daily_forecast_df", "daily_forecast_name", "daily_forecast_mtime"):
         st.session_state.pop(_fc_key, None)
 
+# OTF % / HTF % only calculate on a COMPLETE day of data: comparing a partial
+# (intraday) upload against a full-day forecast would understate attainment.
+# Complete = interval coverage reaches end of day (a slot at 23:00 or later)
+# and at least 46 of the 48 half-hour slots are present — the small tolerance
+# keeps a quiet overnight slot with zero calls from blocking the calculation.
+_FC_FULL_SLOTS = 48
+_FC_MIN_SLOTS  = 46
+_FC_EOD_SLOT   = "23:00"
+
 _fc_data = st.session_state.get("daily_forecast_df")
 _fc_report_date = None
+_fc_incomplete: tuple | None = None   # (slots_loaded, last_slot) when day partial
 if data_ok and _fc_data is not None and call_date:
     try:
         _fc_report_date = pd.to_datetime(call_date).date()
     except Exception:
         _fc_report_date = None
+    if _fc_report_date is not None:
+        _fc_slots = sorted(
+            {s for s in interval_df["Interval"].astype(str) if ":" in s}
+        ) if not interval_df.empty else []
+        _fc_last_slot = _fc_slots[-1] if _fc_slots else None
+        _fc_day_complete = (
+            len(_fc_slots) >= _FC_MIN_SLOTS
+            and _fc_last_slot is not None
+            and _fc_last_slot >= _FC_EOD_SLOT
+        )
+        if not _fc_day_complete:
+            _fc_incomplete = (len(_fc_slots), _fc_last_slot)
+            _fc_report_date = None
+
     if _fc_report_date is not None:
         summary_df = add_forecast_pct(summary_df, _fc_data, _fc_report_date, "Consolidated")
         for _fc_vendor in list(vendor_summaries):
@@ -2278,6 +2302,13 @@ with tab1:
             if st.button("⛶", key="fs_main", help="Expand table to full screen", use_container_width=True):
                 _summary_dialog(_main_df, "main")
 
+        if _fc_incomplete is not None:
+            st.caption(
+                f"ℹ️ **OTF % / HTF % not calculated** — interval data for the day is "
+                f"incomplete ({_fc_incomplete[0]} of {_FC_FULL_SLOTS} intervals loaded"
+                + (f", last interval {_fc_incomplete[1]}" if _fc_incomplete[1] else "")
+                + "). They'll appear automatically once the full day is uploaded."
+            )
         _display_summary(_main_df, table_key="main")
 
         st.markdown(
@@ -2876,7 +2907,9 @@ with tab7:
         "(Consolidated, VXI, TELUS, IGT) with forecast call volumes per LOB per day. "
         "Once loaded, the **Voice Performance Summary** tables gain **OTF %** "
         "(Offered-to-Forecast) and **HTF %** (Handled-to-Forecast) columns — "
-        "actual offered / handled vs the forecast for the report date."
+        "actual offered / handled vs the forecast for the report date. "
+        "They calculate only when the day's interval data is complete "
+        "(coverage through end of day, no missing intervals)."
     )
 
     _fc_file = st.file_uploader(
