@@ -2140,48 +2140,33 @@ elif st.session_state.get("daily_forecast_mtime"):
     for _fc_key in ("daily_forecast_df", "daily_forecast_name", "daily_forecast_mtime"):
         st.session_state.pop(_fc_key, None)
 
-# Forecast Volume always shows for the report date, but Forecast Variance
-# only calculates on a COMPLETE day of data: comparing a partial (intraday)
-# upload against a full-day forecast would understate attainment.
-# Complete = interval coverage reaches end of day (a slot at 23:00 or later)
-# and at least 46 of the 48 half-hour slots are present — the small tolerance
-# keeps a quiet overnight slot with zero calls from blocking the calculation.
-_FC_FULL_SLOTS = 48
-_FC_MIN_SLOTS  = 46
-_FC_EOD_SLOT   = "23:00"
-
+# Forecast Volume / Forecast Variance appear only for PAST-DATED reports:
+# once the raw data's CallDate is behind today's date (Central Time, matching
+# the rest of the dashboard) the day is finished, so actuals vs the full-day
+# forecast is a fair comparison. For a same-day (intraday) load neither
+# column is added.
 _fc_data = st.session_state.get("daily_forecast_df")
 _fc_report_date = None
-_fc_incomplete: tuple | None = None   # (slots_loaded, last_slot) when day partial
+_fc_not_past: str | None = None   # report date label when it isn't past yet
 if data_ok and _fc_data is not None and call_date:
     try:
         _fc_report_date = pd.to_datetime(call_date).date()
     except Exception:
         _fc_report_date = None
     if _fc_report_date is not None:
-        _fc_slots = sorted(
-            {s for s in interval_df["Interval"].astype(str) if ":" in s}
-        ) if not interval_df.empty else []
-        _fc_last_slot = _fc_slots[-1] if _fc_slots else None
-        _fc_day_complete = (
-            len(_fc_slots) >= _FC_MIN_SLOTS
-            and _fc_last_slot is not None
-            and _fc_last_slot >= _FC_EOD_SLOT
-        )
-        if not _fc_day_complete:
-            _fc_incomplete = (len(_fc_slots), _fc_last_slot)
-
-        summary_df = add_forecast_cols(
-            summary_df, _fc_data, _fc_report_date, "Consolidated",
-            with_variance=_fc_day_complete,
-        )
-        for _fc_vendor in list(vendor_summaries):
-            _fc_sheet = _FC_VENDOR_SHEETS.get(_fc_vendor)
-            if _fc_sheet:
-                vendor_summaries[_fc_vendor] = add_forecast_cols(
-                    vendor_summaries[_fc_vendor], _fc_data, _fc_report_date, _fc_sheet,
-                    with_variance=_fc_day_complete,
-                )
+        _fc_today = datetime.now(timezone(timedelta(hours=-5))).date()
+        if _fc_report_date < _fc_today:
+            summary_df = add_forecast_cols(
+                summary_df, _fc_data, _fc_report_date, "Consolidated",
+            )
+            for _fc_vendor in list(vendor_summaries):
+                _fc_sheet = _FC_VENDOR_SHEETS.get(_fc_vendor)
+                if _fc_sheet:
+                    vendor_summaries[_fc_vendor] = add_forecast_cols(
+                        vendor_summaries[_fc_vendor], _fc_data, _fc_report_date, _fc_sheet,
+                    )
+        else:
+            _fc_not_past = _fc_report_date.strftime("%b %d, %Y")
 
 # ── Sidebar — export buttons & notes (only when data is ready) ───────────────
 if data_ok and not summary_df.empty:
@@ -2333,12 +2318,11 @@ with tab1:
             if st.button("⛶", key="fs_main", help="Expand table to full screen", use_container_width=True):
                 _summary_dialog(_main_df, "main")
 
-        if _fc_incomplete is not None:
+        if _fc_not_past is not None:
             st.caption(
-                f"ℹ️ **Forecast Variance not calculated** — interval data for the day is "
-                f"incomplete ({_fc_incomplete[0]} of {_FC_FULL_SLOTS} intervals loaded"
-                + (f", last interval {_fc_incomplete[1]}" if _fc_incomplete[1] else "")
-                + "). It will appear automatically once the full day is uploaded."
+                f"ℹ️ **Forecast Volume / Forecast Variance appear once the day closes** — "
+                f"the loaded data is for {_fc_not_past}, which isn't a past date yet. "
+                f"Past-dated reports show both columns automatically."
             )
         _display_summary(_main_df, table_key="main")
 
@@ -2938,9 +2922,9 @@ with tab7:
         "(Consolidated, VXI, TELUS, IGT) with forecast call volumes per LOB per day. "
         "Once loaded, the **Voice Performance Summary** tables gain a "
         "**Forecast Volume** column (the forecast for the report date) and a "
-        "**Forecast Variance** column (actual offered vs that forecast). "
-        "The variance calculates only when the day's interval data is complete "
-        "(coverage through end of day, no missing intervals)."
+        "**Forecast Variance** column (forecast vs actual offered). "
+        "Both columns appear only when the report date in the raw data is a "
+        "past date — same-day (intraday) loads don't show them."
     )
 
     _fc_file = st.file_uploader(
