@@ -15,6 +15,7 @@ from src.agent_aht import (
 from src.daily_forecast import (
     parse_daily_forecast, forecast_pivot, add_forecast_cols,
     FORECAST_VENDOR_SHEETS as _FC_VENDOR_SHEETS,
+    SITE_RENAME as _FC_SITE_RENAME,
 )
 from src.data_processor import prepare
 from src.excel_export import (
@@ -2128,7 +2129,12 @@ if _fc_disk_mtime > 0:
     if st.session_state.get("daily_forecast_mtime") != _fc_disk_mtime:
         _fc_loaded = load_daily_forecast()
         if _fc_loaded is not None:
-            st.session_state["daily_forecast_df"], st.session_state["daily_forecast_name"] = _fc_loaded
+            _fc_loaded_df, _fc_loaded_name = _fc_loaded
+            # Forecasts saved before a sheet rename (e.g. IGT → ATAIN) keep
+            # the old site name on disk — normalize on the way in.
+            _fc_loaded_df["Site"] = _fc_loaded_df["Site"].replace(_FC_SITE_RENAME)
+            st.session_state["daily_forecast_df"] = _fc_loaded_df
+            st.session_state["daily_forecast_name"] = _fc_loaded_name
             st.session_state["daily_forecast_mtime"] = _fc_disk_mtime
 elif st.session_state.get("daily_forecast_mtime"):
     for _fc_key in ("daily_forecast_df", "daily_forecast_name", "daily_forecast_mtime"):

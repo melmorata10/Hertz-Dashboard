@@ -31,12 +31,17 @@ FORECAST_LOB_MAP = {
     "MultiMonth":                  ["SRP"],
 }
 
-# Vendor table on the dashboard → sheet in the forecast workbook.
-# The main (all-vendor) table uses the Consolidated sheet; ATAIN and HERTZ
-# have no sheet in the workbook so their tables show "—".
+# Workbook sheet name → site/vendor name used on the dashboard.
+# The IGT sheet is the ATAIN vendor's forecast.
+SITE_RENAME = {"IGT": "ATAIN"}
+
+# Vendor table on the dashboard → site in the parsed forecast (after
+# SITE_RENAME). The main (all-vendor) table uses the Consolidated sheet;
+# HERTZ has no sheet in the workbook so its table shows no forecast columns.
 FORECAST_VENDOR_SHEETS = {
     "TELUS": "TELUS",
     "VXI":   "VXI",
+    "ATAIN": "ATAIN",
 }
 
 
@@ -62,7 +67,8 @@ def parse_daily_forecast(file) -> pd.DataFrame:
             id_vars=META_COLS, value_vars=lob_cols,
             var_name="LOB", value_name="Forecast",
         )
-        tidy["Site"] = sheet.strip()
+        _site = sheet.strip()
+        tidy["Site"] = SITE_RENAME.get(_site, _site)
         frames.append(tidy)
 
     df = pd.concat(frames, ignore_index=True)
