@@ -2575,6 +2575,18 @@ with tab3:
     _mdf_numbered = _mdf.copy()
     _mdf_numbered.insert(0, "#", range(1, len(_mdf_numbered) + 1))
 
+    # Dropdown options = the known lists PLUS whatever values are already in
+    # the table — a SelectboxColumn renders any value missing from its options
+    # as a blank cell, which would hide LOBs/Vendors introduced by an import.
+    _lob_opts_dyn = list(dict.fromkeys(
+        _LOB_OPTIONS
+        + [v for v in _mdf["LOB"].fillna("").astype(str).str.strip() if v]
+    ))
+    _vendor_opts_dyn = list(dict.fromkeys(
+        _VENDOR_OPTIONS
+        + [v for v in _mdf["Vendor"].fillna("").astype(str).str.strip() if v]
+    ))
+
     _map_col_cfg = {
         "#": st.column_config.NumberColumn(
             "#",
@@ -2594,13 +2606,13 @@ with tab3:
         ),
         "LOB": st.column_config.SelectboxColumn(
             "LOB",
-            options=_LOB_OPTIONS,
+            options=_lob_opts_dyn,
             width=160,
             help="Line of Business this skill maps to.",
         ),
         "Vendor": st.column_config.SelectboxColumn(
             "Vendor",
-            options=_VENDOR_OPTIONS,
+            options=_vendor_opts_dyn,
             width=110,
             help="Vendor / Supplier handling this skill.",
         ),
