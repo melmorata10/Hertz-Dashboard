@@ -94,9 +94,11 @@ def add_forecast_cols(
     ``fc_df`` is the tidy frame from :func:`parse_daily_forecast`; volumes come
     from ``site``'s sheet. LOBs with no forecast column (or zero forecast)
     show NaN. Pass ``with_variance=False`` on a partial (intraday) day — the
-    volume still shows but the variance stays blank. The Grand Total variance
-    compares only the LOBs that have a forecast, so numerator and denominator
-    cover the same lines of business.
+    volume still shows but the variance column is left out. Columns that end
+    up with no values at all (no forecast for the date, or variance withheld)
+    are NOT added, so the tables only ever show them with real data. The
+    Grand Total variance compares only the LOBs that have a forecast, so
+    numerator and denominator cover the same lines of business.
     """
     out = df.copy()
     out["Forecast Volume"] = float("nan")
@@ -127,16 +129,17 @@ def add_forecast_cols(
         if var_nco > 0:
             out.loc[gt_mask, "Forecast Variance"] = var_fc / var_nco * 100
 
-    # Keep the new columns right after NCH (matters for CSV export order)
-    cols = list(out.columns)
-    for c in ("Forecast Volume", "Forecast Variance"):
-        cols.remove(c)
-    if "NCH" in cols:
-        at = cols.index("NCH") + 1
-        cols[at:at] = ["Forecast Volume", "Forecast Variance"]
-    else:
-        cols += ["Forecast Volume", "Forecast Variance"]
-    return out[cols]
+    # Only keep columns that actually carry data; place them right after NCH
+    keep = [c for c in ("Forecast Volume", "Forecast Variance") if out[c].notna().any()]
+    out = out.drop(columns=[c for c in ("Forecast Volume", "Forecast Variance") if c not in keep])
+    if keep:
+        cols = list(out.columns)
+        for c in keep:
+            cols.remove(c)
+        at = cols.index("NCH") + 1 if "NCH" in cols else len(cols)
+        cols[at:at] = keep
+        out = out[cols]
+    return out
 
 
 def forecast_pivot(df: pd.DataFrame) -> pd.DataFrame:
