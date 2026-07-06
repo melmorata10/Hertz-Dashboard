@@ -112,6 +112,19 @@ def clear_mapping_df() -> None:
         _MAPPING_DF_FILE.unlink(missing_ok=True)
 
 
+def load_mapping_mtime() -> float:
+    """Newest modification time across the two mapping files, or 0.0 if none
+    exist — lets a session detect that another user applied, imported, or
+    deleted the mapping and live-reload it."""
+    mtime = 0.0
+    for f in (_MAPPING_FILE, _MAPPING_DF_FILE):
+        try:
+            mtime = max(mtime, f.stat().st_mtime)
+        except Exception:
+            pass
+    return mtime
+
+
 # ── Custom targets ─────────────────────────────────────────────────────────────
 
 def load_targets() -> dict | None:

@@ -38,7 +38,7 @@ from src.mapping import SKILL_TO_LOB as _BUILTIN_MAPPING, LOB_DISPLAY_ORDER as _
 from src.persistence import (
     load_comments, save_comments, clear_comments,
     load_custom_mapping, save_custom_mapping, clear_custom_mapping,
-    load_mapping_df, save_mapping_df, clear_mapping_df,
+    load_mapping_df, save_mapping_df, clear_mapping_df, load_mapping_mtime,
     load_targets, save_targets, clear_targets, load_targets_mtime,
     load_daily_forecast, save_daily_forecast,
     clear_daily_forecast, load_daily_forecast_mtime,
@@ -69,7 +69,12 @@ st.set_page_config(
 if "lob_comments" not in st.session_state:
     st.session_state["lob_comments"] = load_comments()
 
-if "custom_mapping" not in st.session_state:
+# Live-sync mapping (same mechanism as targets/rules): reload whenever the
+# disk files are newer than what this session last loaded, so a mapping
+# applied, imported, or deleted by any user reaches every open session
+# without a refresh.
+_disk_mapping_mtime = load_mapping_mtime()
+if _disk_mapping_mtime != st.session_state.get("_mapping_mtime", -1.0):
     _persisted_mapping = load_custom_mapping()
     if _persisted_mapping is not None:
         # Add-only sync: append built-in entries that don't exist yet so newly
@@ -83,11 +88,16 @@ if "custom_mapping" not in st.session_state:
         if _cm_changed:
             save_custom_mapping(_persisted_mapping)
         st.session_state["custom_mapping"] = _persisted_mapping
+    else:
+        st.session_state.pop("custom_mapping", None)
 
-if "mapping_df" not in st.session_state:
     _persisted_df = load_mapping_df()
     if _persisted_df is not None:
         st.session_state["mapping_df"] = _persisted_df
+    else:
+        st.session_state.pop("mapping_df", None)
+
+    st.session_state["_mapping_mtime"] = load_mapping_mtime()
 
 # Live-sync exception rules (same mechanism as targets): reload whenever the
 # disk file is newer than what this session last loaded, so rules applied by
