@@ -1268,8 +1268,9 @@ _COL_WIDTHS = {
     "Analysis":    500,
 }
 
-# LOBs hidden from all tabs — Grand Total row is always kept. Driven by
-# "hide <LOB>" rules on the Mapping Network tab (OPERATIONS is a default rule).
+# LOBs excluded from ALL outputs, including Grand Total — their raw rows are
+# filtered out before aggregation in prepare(). Driven by "hide <LOB>" rules
+# on the Mapping Network tab (OPERATIONS is a default rule).
 _HIDDEN_LOBS = _rules_lob_hides(st.session_state.get("exception_rules", []))
 
 
@@ -2130,7 +2131,8 @@ if data_source == "📁 Upload CSV":
                 )
             _active_targets  = st.session_state.get("custom_targets")   # None → use built-in
             summary_df, vendor_summaries, interval_df = prepare(
-                raw, custom_mapping=_active_mapping, custom_targets=_active_targets
+                raw, custom_mapping=_active_mapping, custom_targets=_active_targets,
+                hidden_lobs=_HIDDEN_LOBS,
             )
             data_ok = True
         else:
@@ -2172,7 +2174,8 @@ else:  # SharePoint
                 )
             _active_targets  = st.session_state.get("custom_targets")
             summary_df, vendor_summaries, interval_df = prepare(
-                _raw_sp, custom_mapping=_active_mapping, custom_targets=_active_targets
+                _raw_sp, custom_mapping=_active_mapping, custom_targets=_active_targets,
+                hidden_lobs=_HIDDEN_LOBS,
             )
             data_ok = True
         elif _raw_sp is not None:
@@ -3246,7 +3249,7 @@ with tab8:
             "Examples: `CSCC in Forecast and Mapping needs to be labeled Billing/Disputes` · "
             "`CSSD in mapping is CUSTOMER SPECIAL SERVICES DEPARTMENT in Forecast` · "
             "`label CSCC as Billing/Disputes` · `forecast CSSD counts toward International` · "
-            "`hide OPERATIONS` *(row hidden, still in Grand Total)*"
+            "`hide OPERATIONS` *(excluded everywhere, including Grand Total)*"
         )
         _rules_rev = st.session_state.setdefault("exception_rules_rev", 0)
         _rules_text_val = st.text_area(
@@ -3267,8 +3270,8 @@ with tab8:
                     st.markdown(f"- 🔁 **{_r['From']}** is shown as **{_r['To']}** everywhere")
                 elif _r["Rule Type"] == _RULE_HIDE:
                     st.markdown(
-                        f"- 🙈 **{_r['From']}** is hidden from the tables "
-                        "(still counted in Grand Total)"
+                        f"- 🙈 **{_r['From']}** is excluded everywhere — "
+                        "no row, and not counted in Grand Total"
                     )
                 else:
                     st.markdown(

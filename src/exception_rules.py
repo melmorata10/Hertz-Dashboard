@@ -48,7 +48,7 @@ DEFAULT_RULES = [
         "Rule Type": RULE_TYPE_HIDE,
         "From": "OPERATIONS",
         "To": "",
-        "Notes": "Internal bucket — kept in Grand Total but not shown as a row",
+        "Notes": "Internal bucket — excluded from the tables and Grand Total",
     },
 ]
 
@@ -69,7 +69,7 @@ def _clean(v) -> str:
 #     "CSCC in Forecast and Mapping needs to be labeled Billing/Disputes"
 #     "label CSCC as Billing/Disputes" / "rename CSCC to Billing/Disputes"
 #     "CSCC = Billing/Disputes" / "CSCC -> Billing/Disputes"
-#   Hide a LOB row from the tables (Grand Total still includes it):
+#   Hide a LOB entirely (no row, and excluded from Grand Total):
 #     "hide OPERATIONS" / "exclude OPERATIONS from the dashboard"
 #     "don't show OPERATIONS"
 
@@ -208,7 +208,8 @@ def lob_renames(rules) -> dict:
 
 
 def lob_hides(rules) -> set:
-    """Set of LOB labels (as displayed, after renames) to hide from tables."""
+    """LOB labels (as displayed, after renames) excluded from all outputs,
+    including the Grand Total — filtered out before aggregation."""
     return {
         r["From"]
         for r in rules
@@ -291,7 +292,7 @@ def build_mapping_network(mapping_df, rules, fc_lobs=None) -> tuple:
             fc_disp, status = "—", "⚠️ skills without a LOB — excluded from reports"
         elif lob in hides:
             fc_disp = " + ".join(fc_cols) if fc_cols else "—"
-            status = "🙈 hidden from dashboard (kept in Grand Total)"
+            status = "🙈 hidden — excluded from tables and Grand Total"
         elif not fc_cols:
             fc_disp, status = "—", "⚠️ no forecast column linked"
         elif fc_lobs is None:

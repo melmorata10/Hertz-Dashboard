@@ -125,6 +125,7 @@ def prepare(
     raw: pd.DataFrame,
     custom_mapping: dict = None,
     custom_targets: dict = None,
+    hidden_lobs: set = None,
 ) -> tuple[pd.DataFrame, dict, pd.DataFrame]:
     """
     Returns (summary_df, vendor_summaries, interval_df).
@@ -139,6 +140,9 @@ def prepare(
         Override skill→LOB+Vendor mapping. None = use built-in.
     custom_targets : dict | None
         Override per-LOB targets {lob: {"aht", "asa", "abn"}}. None = use built-in.
+    hidden_lobs : set | None
+        LOB labels excluded from ALL outputs — their calls do not count
+        toward Grand Total, KPI tiles, vendor tables, or intervals.
     """
     _EMPTY_COLS = [
         "LOB", "NCO", "NCH", "Target AHT", "AHT", "AHT Var%",
@@ -174,6 +178,8 @@ def prepare(
     # 4. Enrich with LOB / Vendor via skill mapping
     df = _enrich(df, mapping=custom_mapping)
     df = df[df["LOB"].notna() & (df["LOB"] != "") & (df["LOB"] != "Unknown")]
+    if hidden_lobs:
+        df = df[~df["LOB"].isin(hidden_lobs)]
 
     if df.empty:
         empty = pd.DataFrame(columns=_EMPTY_COLS)
