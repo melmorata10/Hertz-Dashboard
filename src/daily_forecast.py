@@ -43,6 +43,25 @@ FORECAST_VENDOR_SHEETS = {
     "ATAIN": "ATAIN",
 }
 
+# Vendor spelling variants seen in mappings → canonical site name.
+_VENDOR_ALIASES = {"ATTAIN": "ATAIN", "IGT": "ATAIN"}
+
+
+def resolve_vendor_site(vendor, sites) -> str | None:
+    """Resolve a dashboard vendor label to a forecast site name.
+
+    Tolerant of case and spelling variants (Atain / ATTAIN / IGT all reach the
+    ATAIN sheet), and any vendor whose name matches a site outright links
+    automatically. Returns the site exactly as it appears in ``sites``, or
+    None when the workbook has no sheet for this vendor (e.g. HERTZ).
+    """
+    v = str(vendor).strip().upper()
+    v = _VENDOR_ALIASES.get(v, v)
+    explicit = {k.upper(): s.upper() for k, s in FORECAST_VENDOR_SHEETS.items()}
+    target = explicit.get(v, v)
+    lookup = {str(s).strip().upper(): s for s in sites}
+    return lookup.get(target)
+
 
 def parse_daily_forecast(file) -> pd.DataFrame:
     """Read the Daily Forecast workbook into tidy rows: Site / Date / LOB / Forecast.

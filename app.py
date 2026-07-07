@@ -14,7 +14,7 @@ from src.agent_aht import (
 )
 from src.daily_forecast import (
     parse_daily_forecast, forecast_pivot, add_forecast_cols,
-    FORECAST_VENDOR_SHEETS as _FC_VENDOR_SHEETS,
+    resolve_vendor_site as _fc_resolve_vendor_site,
     SITE_RENAME as _FC_SITE_RENAME,
 )
 from src.exception_rules import (
@@ -2260,8 +2260,9 @@ if data_ok and _fc_data is not None and call_date:
                 summary_df, _fc_data, _fc_report_date, "Consolidated",
                 lob_map=_fc_lob_map,
             )
+            _fc_sites = _fc_data["Site"].unique()
             for _fc_vendor in list(vendor_summaries):
-                _fc_sheet = _FC_VENDOR_SHEETS.get(_fc_vendor)
+                _fc_sheet = _fc_resolve_vendor_site(_fc_vendor, _fc_sites)
                 if _fc_sheet:
                     vendor_summaries[_fc_vendor] = add_forecast_cols(
                         vendor_summaries[_fc_vendor], _fc_data, _fc_report_date, _fc_sheet,
