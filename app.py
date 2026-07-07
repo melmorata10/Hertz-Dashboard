@@ -19,10 +19,12 @@ from src.daily_forecast import (
 )
 from src.exception_rules import (
     RULE_TYPE_RENAME as _RULE_RENAME,
+    RULE_TYPE_HIDE as _RULE_HIDE,
     DEFAULT_RULES as _DEFAULT_RULES,
     parse_rules_text as _parse_rules_text,
     rules_to_text as _rules_to_text,
     lob_renames as _rules_lob_renames,
+    lob_hides as _rules_lob_hides,
     build_mapping_network as _build_mapping_network,
     apply_to_mapping as _rules_apply_to_mapping,
     apply_to_forecast_df as _rules_apply_to_forecast,
@@ -1266,8 +1268,9 @@ _COL_WIDTHS = {
     "Analysis":    500,
 }
 
-# LOBs hidden from all tabs — Grand Total row is always kept
-_HIDDEN_LOBS = {"OPERATIONS"}
+# LOBs hidden from all tabs — Grand Total row is always kept. Driven by
+# "hide <LOB>" rules on the Mapping Network tab (OPERATIONS is a default rule).
+_HIDDEN_LOBS = _rules_lob_hides(st.session_state.get("exception_rules", []))
 
 
 def _kpi_cards(df: pd.DataFrame):
@@ -3242,7 +3245,8 @@ with tab8:
             "are comments.  \n"
             "Examples: `CSCC in Forecast and Mapping needs to be labeled Billing/Disputes` · "
             "`CSSD in mapping is CUSTOMER SPECIAL SERVICES DEPARTMENT in Forecast` · "
-            "`label CSCC as Billing/Disputes` · `forecast CSSD counts toward International`"
+            "`label CSCC as Billing/Disputes` · `forecast CSSD counts toward International` · "
+            "`hide OPERATIONS` *(row hidden, still in Grand Total)*"
         )
         _rules_rev = st.session_state.setdefault("exception_rules_rev", 0)
         _rules_text_val = st.text_area(
@@ -3261,6 +3265,11 @@ with tab8:
             for _r in _rules_preview:
                 if _r["Rule Type"] == _RULE_RENAME:
                     st.markdown(f"- 🔁 **{_r['From']}** is shown as **{_r['To']}** everywhere")
+                elif _r["Rule Type"] == _RULE_HIDE:
+                    st.markdown(
+                        f"- 🙈 **{_r['From']}** is hidden from the tables "
+                        "(still counted in Grand Total)"
+                    )
                 else:
                     st.markdown(
                         f"- 🔗 forecast column **{_r['From']}** counts toward LOB **{_r['To']}**"

@@ -18,7 +18,8 @@ from src.daily_forecast import FORECAST_LOB_MAP
 
 RULE_TYPE_RENAME = "Rename LOB"
 RULE_TYPE_LINK = "Forecast → LOB link"
-RULE_TYPES = [RULE_TYPE_RENAME, RULE_TYPE_LINK]
+RULE_TYPE_HIDE = "Hide LOB"
+RULE_TYPES = [RULE_TYPE_RENAME, RULE_TYPE_LINK, RULE_TYPE_HIDE]
 
 RULE_COLUMNS = ["Rule Type", "From", "To", "Notes"]
 
@@ -43,6 +44,12 @@ DEFAULT_RULES = [
         "To": "CSSD",
         "Notes": "Same department — older forecast files spell it out in full",
     },
+    {
+        "Rule Type": RULE_TYPE_HIDE,
+        "From": "OPERATIONS",
+        "To": "",
+        "Notes": "Internal bucket — kept in Grand Total but not shown as a row",
+    },
 ]
 
 
@@ -62,6 +69,15 @@ def _clean(v) -> str:
 #     "CSCC in Forecast and Mapping needs to be labeled Billing/Disputes"
 #     "label CSCC as Billing/Disputes" / "rename CSCC to Billing/Disputes"
 #     "CSCC = Billing/Disputes" / "CSCC -> Billing/Disputes"
+#   Hide a LOB row from the tables (Grand Total still includes it):
+#     "hide OPERATIONS" / "exclude OPERATIONS from the dashboard"
+#     "don't show OPERATIONS"
+
+_RE_HIDE = re.compile(
+    r"^(?:hide|exclude|do\s*not\s+show|don'?t\s+show)\s+(?:the\s+)?(?:lob\s+)?(.+?)"
+    r"(?:\s+from\s+(?:the\s+)?(?:dashboard|tables?|reports?|summary))?$",
+    re.I,
+)
 
 _RE_LINK_MAP_FIRST = re.compile(
     r"^(?:the\s+)?(.+?)\s+in\s+(?:the\s+)?mapping\s+is\s+(?:the\s+)?(.+?)\s+in\s+(?:the\s+)?forecast$",
@@ -96,6 +112,10 @@ def _parse_line(line: str) -> dict | None:
     if not line:
         return None
 
+    m = _RE_HIDE.match(line)
+    if m:
+        return {"Rule Type": RULE_TYPE_HIDE, "From": m.group(1).strip(),
+                "To": "", "Notes": ""}
     m = _RE_LINK_MAP_FIRST.match(line)
     if m:  # "<LOB> in mapping is <column> in forecast"
         return {"Rule Type": RULE_TYPE_LINK, "From": m.group(2).strip(),
@@ -150,6 +170,8 @@ def rules_to_text(rules) -> str:
         note = f"  # {r['Notes']}" if r.get("Notes") else ""
         if r.get("Rule Type") == RULE_TYPE_LINK:
             lines.append(f"forecast {r['From']} counts toward {r['To']}{note}")
+        elif r.get("Rule Type") == RULE_TYPE_HIDE:
+            lines.append(f"hide {r['From']}{note}")
         else:
             lines.append(f"label {r['From']} as {r['To']}{note}")
     return "\n".join(lines)
@@ -162,7 +184,13 @@ def clean_rules(rows) -> list:
         rtype = _clean(row.get("Rule Type"))
         src = _clean(row.get("From"))
         dst = _clean(row.get("To"))
-        if rtype in RULE_TYPES and src and dst and src != dst:
+        if rtype == RULE_TYPE_HIDE:
+            if src:
+                cleaned.append({
+                    "Rule Type": rtype, "From": src, "To": "",
+                    "Notes": _clean(row.get("Notes")),
+                })
+        elif rtype in RULE_TYPES and src and dst and src != dst:
             cleaned.append({
                 "Rule Type": rtype, "From": src, "To": dst,
                 "Notes": _clean(row.get("Notes")),
@@ -176,6 +204,15 @@ def lob_renames(rules) -> dict:
         r["From"]: r["To"]
         for r in rules
         if r.get("Rule Type") == RULE_TYPE_RENAME and r.get("From") and r.get("To")
+    }
+
+
+def lob_hides(rules) -> set:
+    """Set of LOB labels (as displayed, after renames) to hide from tables."""
+    return {
+        r["From"]
+        for r in rules
+        if r.get("Rule Type") == RULE_TYPE_HIDE and r.get("From")
     }
 
 
@@ -221,6 +258,7 @@ def build_mapping_network(mapping_df, rules, fc_lobs=None) -> tuple:
     """
     ren = lob_renames(rules)
     merged = build_forecast_lob_map(rules)
+    hides = lob_hides(rules)
     fc_lobs = set(fc_lobs) if fc_lobs is not None else None
 
     groups: dict = {}
@@ -251,6 +289,9 @@ def build_mapping_network(mapping_df, rules, fc_lobs=None) -> tuple:
 
         if lob == "(no LOB assigned)":
             fc_disp, status = "—", "⚠️ skills without a LOB — excluded from reports"
+        elif lob in hides:
+            fc_disp = " + ".join(fc_cols) if fc_cols else "—"
+            status = "🙈 hidden from dashboard (kept in Grand Total)"
         elif not fc_cols:
             fc_disp, status = "—", "⚠️ no forecast column linked"
         elif fc_lobs is None:
