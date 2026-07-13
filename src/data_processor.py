@@ -16,6 +16,9 @@ _RAW_COLS = {
     "abn":                  "ABN",
     "asa":                  "ASA",
     "speedofanswer":        "SpeedOfAnswer",  # keep total separate — used for ASA_w
+    "totalservicelevelcalls":     "SLCalls",  # calls answered within SL threshold
+    "total service level calls":  "SLCalls",
+    "servicelevelcalls":          "SLCalls",
 }
 
 # Canonical SkillName column candidates, in priority order (first match wins)
@@ -92,6 +95,8 @@ def _aggregate(df: pd.DataFrame, group_cols: list) -> pd.DataFrame:
         AHT_w =("AHT_w", "sum"),
         ASA_w =("ASA_w", "sum"),
         ABN   =("ABN",   "sum"),
+        # min_count=1 keeps SLC as NaN (not 0) when the raw file lacks the column
+        SLC   =("SLCalls", lambda s: s.sum(min_count=1)),
     ).reset_index()
 
 
@@ -107,6 +112,7 @@ def _derive_metrics(
     df["AHT"]  = (df["AHT_w"] / safe_nch).round(1)
     df["ASA"]  = (df["ASA_w"] / safe_nch).round(1)
     df["ABN%"] = (df["ABN"]   / safe_nco * 100).round(2)
+    df["SL%"]  = (df["SLC"]   / safe_nco * 100).round(1)
 
     _targets = custom_targets if custom_targets is not None else TARGETS
 
@@ -118,7 +124,7 @@ def _derive_metrics(
     df["Target ABN%"] = df[lob_col].map(lambda l: tgt(l, "abn") * 100)
     df["AHT Var%"]    = ((df["AHT"] - df["Target AHT"]) / df["Target AHT"] * 100).round(1)
 
-    return df.drop(columns=["AHT_w", "ASA_w"])
+    return df.drop(columns=["AHT_w", "ASA_w", "SLC"])
 
 
 def prepare(
@@ -145,7 +151,7 @@ def prepare(
         toward Grand Total, KPI tiles, vendor tables, or intervals.
     """
     _EMPTY_COLS = [
-        "LOB", "NCO", "NCH", "Target AHT", "AHT", "AHT Var%",
+        "LOB", "NCO", "NCH", "SL%", "Target AHT", "AHT", "AHT Var%",
         "ABN", "Target ABN%", "ABN%", "Target ASA", "ASA",
     ]
     if raw.empty:
@@ -161,6 +167,13 @@ def prepare(
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
         else:
             df[col] = 0
+
+    # SLCalls: calls answered within the SL threshold. NaN (not 0) when the
+    # column is missing entirely so SL% renders as "—" instead of a false 0%.
+    if "SLCalls" in df.columns:
+        df["SLCalls"] = pd.to_numeric(df["SLCalls"], errors="coerce").fillna(0)
+    else:
+        df["SLCalls"] = float("nan")
 
     # ABN: use column if present, otherwise derive from NCO - NCH
     if "ABN" in df.columns:
@@ -206,6 +219,7 @@ def prepare(
         nco = int(sub["NCO"].sum())
         nch = int(sub["NCH"].sum())
         abn = int(sub["ABN"].sum())
+        slc = sub["SLCalls"].sum(min_count=1)
         gt_aht        = round(sub["AHT_w"].sum() / nch, 1) if nch > 0 else 0
         gt_target_aht = round(agg["Target AHT"].mean(), 1)
         gt_aht_var    = round((gt_aht - gt_target_aht) / gt_target_aht * 100, 1) if gt_target_aht else None
@@ -214,6 +228,7 @@ def prepare(
             "LOB":         "Grand Total",
             "NCO":         nco,
             "NCH":         nch,
+            "SL%":         round(slc / nco * 100, 1) if nco > 0 and pd.notna(slc) else float("nan"),
             "AHT":         gt_aht,
             "Target AHT":  gt_target_aht,
             "AHT Var%":    gt_aht_var,
