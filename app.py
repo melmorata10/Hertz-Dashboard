@@ -636,6 +636,16 @@ def _colour_row(row):
                     styles[idx] = "background-color: #FFF4CC; color: #7a5c00"
                 else:
                     styles[idx] = "background-color: #FFD0D0; color: #8b0000"
+
+    # SL% — fixed 80% threshold: at/above = green, below = red
+    if "SL%" in cols:
+        val = row["SL%"]
+        if pd.notna(val):
+            idx = cols.index("SL%")
+            styles[idx] = (
+                "background-color: #C8F0C8; color: #1a5e1a" if val >= 80
+                else "background-color: #FFD0D0; color: #8b0000"
+            )
     return styles
 
 
@@ -903,6 +913,9 @@ def _summary_to_html_table(
         if col == "AHT Var%":
             if val <= 0:  return GREEN_BG,  GREEN_FG
             if val <= 5:  return YELLOW_BG, YELLOW_FG
+            return RED_BG, RED_FG
+        if col == "SL%":
+            if val >= 80: return GREEN_BG, GREEN_FG
             return RED_BG, RED_FG
         if col == "ABN%":
             tgt = row.get("Target ABN%", float("nan"))
@@ -1601,6 +1614,9 @@ def _summary_dialog(df: pd.DataFrame, table_key: str):
         if col == "AHT Var%":
             if val <= 0:  return GREEN_BG,  GREEN_FG
             if val <= 5:  return YELLOW_BG, YELLOW_FG
+            return RED_BG, RED_FG
+        if col == "SL%":
+            if val >= 80: return GREEN_BG, GREEN_FG
             return RED_BG, RED_FG
         if col == "AHT":
             # Color AHT the same shade as its variance (mirrors main table _colour_row)
