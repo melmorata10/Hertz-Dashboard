@@ -960,7 +960,8 @@ def _summary_to_html_table(
 
     ths = "".join(
         f'<th style="background:{HDR_BG};color:white;padding:7px 10px;'
-        f'border:1px solid #888;white-space:nowrap;font-weight:bold">{_col_label(c)}</th>'
+        f'border:1px solid #888;white-space:nowrap;font-weight:bold;'
+        f'text-align:{"left" if c in ("LOB", "Comment / Action") else "center"}">{_col_label(c)}</th>'
         for c in data_cols
     )
     rows_html.append(f"<tr>{ths}</tr>")
@@ -1264,21 +1265,24 @@ def _parse_targets_upload(file) -> dict:
     return targets
 
 
+# Uniform table layout: every metric column is the same width and centered;
+# only LOB and Analysis are left-aligned (and sized for text).
+_METRIC_COL_WIDTH = 90
 _COL_WIDTHS = {
     "LOB":         160,
-    "NCO":          80,
-    "NCH":          80,
-    "SL%":          80,
-    "Forecast Volume":   105,
-    "Forecast Variance": 105,
-    "Target AHT":   80,
-    "AHT":          80,
-    "AHT Var%":     80,
-    "ABN":          80,
-    "Target ABN%":  80,
-    "ABN%":         80,
-    "Target ASA":   80,
-    "ASA":          80,
+    "NCO":          _METRIC_COL_WIDTH,
+    "NCH":          _METRIC_COL_WIDTH,
+    "SL%":          _METRIC_COL_WIDTH,
+    "Forecast Volume":   _METRIC_COL_WIDTH,
+    "Forecast Variance": _METRIC_COL_WIDTH,
+    "Target AHT":   _METRIC_COL_WIDTH,
+    "AHT":          _METRIC_COL_WIDTH,
+    "AHT Var%":     _METRIC_COL_WIDTH,
+    "ABN":          _METRIC_COL_WIDTH,
+    "Target ABN%":  _METRIC_COL_WIDTH,
+    "ABN%":         _METRIC_COL_WIDTH,
+    "Target ASA":   _METRIC_COL_WIDTH,
+    "ASA":          _METRIC_COL_WIDTH,
     "Analysis":    500,
 }
 
@@ -1414,7 +1418,8 @@ def _display_summary(df: pd.DataFrame, table_key: str = "main"):
 
     styled = disp.style.apply(lambda _: _cell_styles, axis=None)
 
-    # Column config — Analysis is editable, everything else locked
+    # Column config — Analysis is editable, everything else locked.
+    # Metric columns are uniformly sized and centered; LOB/Analysis left.
     col_cfg = {}
     for c, w in _COL_WIDTHS.items():
         if c not in present:
@@ -1423,10 +1428,14 @@ def _display_summary(df: pd.DataFrame, table_key: str = "main"):
             col_cfg[c] = st.column_config.TextColumn(
                 "Analysis / Notes",
                 width=w,
+                alignment="left",
                 help="Auto-generated from metrics. Click any cell to edit or add your own notes.",
             )
         else:
-            col_cfg[c] = st.column_config.TextColumn(c, width=w)
+            col_cfg[c] = st.column_config.TextColumn(
+                c, width=w,
+                alignment="left" if c == "LOB" else "center",
+            )
 
     disabled_cols = [c for c in present if c != "Analysis"]
     _row_h = 36
@@ -1647,10 +1656,10 @@ def _summary_dialog(df: pd.DataFrame, table_key: str):
         return str(val) if pd.notna(val) else "—"
 
     # Proportional widths for table-layout:fixed;width:100% at 92vw.
-    # LOB=130, 10 metrics=72px each (uniform), Analysis=450 → ratios preserved at full width.
+    # LOB=130, all metrics=72px each (uniform), Analysis=450 → ratios preserved at full width.
     _DLG_W = {
         "LOB": 130, "NCO": 72, "NCH": 72, "SL%": 72,
-        "Forecast Volume": 84, "Forecast Variance": 84,
+        "Forecast Volume": 72, "Forecast Variance": 72,
         "Target AHT": 72, "AHT": 72, "AHT Var%": 72,
         "ABN": 72, "Target ABN%": 72, "ABN%": 72,
         "Target ASA": 72, "ASA": 72, "Analysis": 450,
