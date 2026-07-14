@@ -2216,22 +2216,32 @@ if _fc_upload is not None:
 
 # Sync with the server copy: first visit loads it, and a newer save by another
 # user (mtime changed) live-reloads it; a cleared file drops it everywhere.
-_fc_disk_mtime = load_daily_forecast_mtime()
-if _fc_disk_mtime > 0:
-    if st.session_state.get("daily_forecast_mtime") != _fc_disk_mtime:
-        _fc_loaded = load_daily_forecast()
-        if _fc_loaded is not None:
-            _fc_loaded_df, _fc_loaded_name = _fc_loaded
-            # Forecasts saved before a sheet rename (e.g. IGT → ATAIN) keep
-            # the old site name on disk — normalize on the way in. LOB
-            # renames are handled live by the exception rules.
-            _fc_loaded_df["Site"] = _fc_loaded_df["Site"].replace(_FC_SITE_RENAME)
-            st.session_state["daily_forecast_df"] = _fc_loaded_df
-            st.session_state["daily_forecast_name"] = _fc_loaded_name
-            st.session_state["daily_forecast_mtime"] = _fc_disk_mtime
-elif st.session_state.get("daily_forecast_mtime"):
+# Guarded: the saved forecast is shared state auto-loaded by EVERY session at
+# startup, so a corrupted file must degrade to a warning — never crash the app.
+try:
+    _fc_disk_mtime = load_daily_forecast_mtime()
+    if _fc_disk_mtime > 0:
+        if st.session_state.get("daily_forecast_mtime") != _fc_disk_mtime:
+            _fc_loaded = load_daily_forecast()
+            if _fc_loaded is not None:
+                _fc_loaded_df, _fc_loaded_name = _fc_loaded
+                # Forecasts saved before a sheet rename (e.g. IGT → ATAIN) keep
+                # the old site name on disk — normalize on the way in. LOB
+                # renames are handled live by the exception rules.
+                _fc_loaded_df["Site"] = _fc_loaded_df["Site"].replace(_FC_SITE_RENAME)
+                st.session_state["daily_forecast_df"] = _fc_loaded_df
+                st.session_state["daily_forecast_name"] = _fc_loaded_name
+                st.session_state["daily_forecast_mtime"] = _fc_disk_mtime
+    elif st.session_state.get("daily_forecast_mtime"):
+        for _fc_key in ("daily_forecast_df", "daily_forecast_name", "daily_forecast_mtime"):
+            st.session_state.pop(_fc_key, None)
+except Exception as _fc_load_exc:
     for _fc_key in ("daily_forecast_df", "daily_forecast_name", "daily_forecast_mtime"):
         st.session_state.pop(_fc_key, None)
+    st.warning(
+        "⚠️ The saved Daily Forecast could not be loaded and was skipped "
+        f"({_fc_load_exc}). Re-upload it on the Daily Forecast tab."
+    )
 
 # Forecast Volume / Forecast Variance appear only for PAST-DATED reports:
 # once the raw data's CallDate is behind today's date (Central Time, matching
@@ -2257,18 +2267,26 @@ if data_ok and _fc_data is not None and call_date:
     if _fc_report_date is not None:
         _fc_today = datetime.now(timezone(timedelta(hours=-5))).date()
         if _fc_report_date < _fc_today:
-            summary_df = add_forecast_cols(
-                summary_df, _fc_data, _fc_report_date, "Consolidated",
-                lob_map=_fc_lob_map,
-            )
-            _fc_sites = _fc_data["Site"].unique()
-            for _fc_vendor in list(vendor_summaries):
-                _fc_sheet = _fc_resolve_vendor_site(_fc_vendor, _fc_sites)
-                if _fc_sheet:
-                    vendor_summaries[_fc_vendor] = add_forecast_cols(
-                        vendor_summaries[_fc_vendor], _fc_data, _fc_report_date, _fc_sheet,
-                        lob_map=_fc_lob_map,
-                    )
+            # Guarded: a bad forecast may cost its columns, never the dashboard.
+            try:
+                summary_df = add_forecast_cols(
+                    summary_df, _fc_data, _fc_report_date, "Consolidated",
+                    lob_map=_fc_lob_map,
+                )
+                _fc_sites = _fc_data["Site"].unique()
+                for _fc_vendor in list(vendor_summaries):
+                    _fc_sheet = _fc_resolve_vendor_site(_fc_vendor, _fc_sites)
+                    if _fc_sheet:
+                        vendor_summaries[_fc_vendor] = add_forecast_cols(
+                            vendor_summaries[_fc_vendor], _fc_data, _fc_report_date, _fc_sheet,
+                            lob_map=_fc_lob_map,
+                        )
+            except Exception as _fc_apply_exc:
+                st.warning(
+                    "⚠️ Forecast columns were skipped — the saved Daily Forecast "
+                    f"could not be applied ({_fc_apply_exc}). Re-upload it on the "
+                    "Daily Forecast tab."
+                )
         else:
             _fc_not_past = _fc_report_date.strftime("%b %d, %Y")
 

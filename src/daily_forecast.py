@@ -74,12 +74,20 @@ def parse_daily_forecast(file) -> pd.DataFrame:
     for sheet in xl.sheet_names:
         raw = xl.parse(sheet)
         raw.columns = [str(c).strip() for c in raw.columns]
+        # Hand-editing a workbook in Excel often stretches its "used range"
+        # with blank rows/columns; melting those phantom cells can balloon
+        # into millions of rows and OOM the server. Strip them first:
+        # headerless ("Unnamed: N") and all-empty columns, then rows with
+        # no parseable Date.
+        raw = raw.drop(columns=[c for c in raw.columns if c.startswith("Unnamed")])
+        raw = raw.dropna(axis=1, how="all")
         missing = [c for c in META_COLS if c not in raw.columns]
         if missing:
             raise ValueError(
                 f"Sheet '{sheet}' doesn't look like a Daily Forecast sheet — "
                 "missing column(s): " + ", ".join(missing)
             )
+        raw = raw[pd.to_datetime(raw["Date"], errors="coerce").notna()]
         lob_cols = [c for c in raw.columns if c not in META_COLS]
         tidy = raw.melt(
             id_vars=META_COLS, value_vars=lob_cols,
@@ -90,6 +98,15 @@ def parse_daily_forecast(file) -> pd.DataFrame:
         frames.append(tidy)
 
     df = pd.concat(frames, ignore_index=True)
+    # Belt-and-braces: a plausible workbook is a few sites × ~1 year of days
+    # × ~30 LOBs ≈ 50k rows. Anything far beyond that is a malformed file —
+    # reject it cleanly rather than saving a poison pill to shared state.
+    if len(df) > 250_000:
+        raise ValueError(
+            "This file expands to an implausible number of forecast rows "
+            f"({len(df):,}). It is likely corrupted by stray cells — please "
+            "copy the data into a fresh workbook and re-upload."
+        )
     df["Date"] = pd.to_datetime(df["Date"], errors="coerce").dt.date
     df = df[df["Date"].notna()].copy()
     df["Week"] = pd.to_datetime(df["Week"], errors="coerce").dt.date
@@ -133,20 +150,28 @@ def add_forecast_cols(
 
     sel = fc_df[(fc_df["Site"] == site) & (fc_df["Date"] == report_date)]
     if not sel.empty:
-        vols = dict(zip(sel["LOB"], sel["Forecast"]))
+        # All name matching is case/whitespace-insensitive: "REX TNC",
+        # "Rex TNC" and "rex tnc " are the same column, so nobody has to
+        # hand-edit workbook headers to make them link up.
+        vols: dict[str, float] = {}
+        for _lob_name, _fc_val in zip(sel["LOB"], sel["Forecast"]):
+            _k = str(_lob_name).strip().upper()
+            vols[_k] = vols.get(_k, 0.0) + float(_fc_val)
+        norm_map = {str(k).strip().upper(): v for k, v in lob_map.items()}
         vol_tot = var_fc = var_nco = 0.0
         for i, row in out.iterrows():
             lob = str(row.get("LOB", ""))
             if lob == "Grand Total":
                 continue
-            fc_cols = lob_map.get(lob)
-            # Fallback: a forecast column with exactly the LOB's name counts
+            lob_key = lob.strip().upper()
+            fc_cols = norm_map.get(lob_key)
+            # Fallback: a forecast column with the LOB's name counts
             # toward it automatically — no mapping entry or link rule needed.
-            if not fc_cols and lob in vols:
+            if not fc_cols and lob_key in vols:
                 fc_cols = [lob]
             if not fc_cols:
                 continue
-            fc = sum(vols.get(c, 0.0) for c in fc_cols)
+            fc = sum(vols.get(str(c).strip().upper(), 0.0) for c in fc_cols)
             if fc <= 0:
                 continue
             out.at[i, "Forecast Volume"] = fc
