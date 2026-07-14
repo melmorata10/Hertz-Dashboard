@@ -1268,6 +1268,13 @@ def _parse_targets_upload(file) -> dict:
 # Uniform table layout: every metric column is the same width and centered;
 # only LOB and Analysis are left-aligned (and sized for text).
 _METRIC_COL_WIDTH = 90
+
+# Display labels shortened to fit the uniform column width without truncation.
+# Underlying DataFrame column names are unchanged.
+_COL_LABELS = {
+    "Forecast Volume":   "Fcst Vol",
+    "Forecast Variance": "Fcst Var%",
+}
 _COL_WIDTHS = {
     "LOB":         160,
     "NCO":          _METRIC_COL_WIDTH,
@@ -1433,7 +1440,7 @@ def _display_summary(df: pd.DataFrame, table_key: str = "main"):
             )
         else:
             col_cfg[c] = st.column_config.TextColumn(
-                c, width=w,
+                _COL_LABELS.get(c, c), width=w,
                 alignment="left" if c == "LOB" else "center",
             )
 
@@ -1665,7 +1672,7 @@ def _summary_dialog(df: pd.DataFrame, table_key: str):
         "Target ASA": 72, "ASA": 72, "Analysis": 450,
     }
     left_cols   = {"LOB", "Analysis"}
-    col_labels  = {"Analysis": "Analysis / Notes"}
+    col_labels  = {"Analysis": "Analysis / Notes", **_COL_LABELS}
 
     cols_html = "".join(f'<col style="width:{_DLG_W.get(c, 53)}px">' for c in present)
     ths = "".join(
