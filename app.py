@@ -6,12 +6,6 @@ import plotly.graph_objects as go
 import streamlit as st
 import streamlit.components.v1 as components
 
-from src.agent_aht import (
-    parse_agent_aht, agent_aht_pivot, site_aht_pivot,
-    aht_table_html as _aht_table_html,
-    build_agent_aht_workbook,
-    report_filename as _aht_report_filename,
-)
 from src.daily_forecast import (
     parse_daily_forecast, forecast_pivot, add_forecast_cols,
     resolve_vendor_site as _fc_resolve_vendor_site,
@@ -31,11 +25,6 @@ from src.exception_rules import (
     build_forecast_lob_map as _rules_forecast_lob_map,
 )
 from src.data_processor import prepare
-from src.excel_export import (
-    build_asa_report_workbook,
-    default_filename as _asa_report_filename,
-    REPORT_LOB_SHEETS as _ASA_LOB_SHEETS,
-)
 from src.mapping import SKILL_TO_LOB as _BUILTIN_MAPPING, LOB_DISPLAY_ORDER as _LOB_ORDER, TARGETS as _BUILTIN_TARGETS
 from src.persistence import (
     load_comments, save_comments, clear_comments,
@@ -541,34 +530,25 @@ section.main > div > div > div > div > div { animation: fadeSlideIn 0.4s ease bo
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-def _ct_now() -> str:
-    ct = datetime.now(timezone(timedelta(hours=-5)))
-    hour = ct.strftime("%I%p").lstrip("0")  # cross-platform: strip leading zero
-    return f"Hertz WBR as of {hour} CT"
+def _coverage_header(date_range) -> str:
+    """WBR header: the coverage period of the loaded data (no as-of time).
 
-
-def _data_as_of(interval_df: pd.DataFrame, call_date: str = None) -> str:
-    """Use the latest interval time + call date from the data; fall back to system clock."""
-    if interval_df is None or interval_df.empty or "Interval" not in interval_df.columns:
-        return _ct_now()
-    valid = interval_df["Interval"].dropna()
-    valid = valid[valid != "N/A"]
-    if valid.empty:
-        return _ct_now()
-    latest = valid.max()  # "HH:MM" strings sort correctly lexicographically
-    try:
-        t = datetime.strptime(latest, "%H:%M")
-        hour_str = t.strftime("%I:%M%p").lstrip("0").replace(":00", "")
-        if call_date:
-            try:
-                d = datetime.strptime(str(call_date), "%m/%d/%Y")
-                date_str = f"{d.strftime('%b')} {d.day}"  # e.g. "May 9"
-            except Exception:
-                date_str = str(call_date)
-            return f"Hertz WBR · {date_str} · {hour_str} CT"
-        return f"Hertz WBR as of {hour_str} CT"
-    except Exception:
-        return _ct_now()
+    ``date_range`` is a (min_date, max_date) tuple of pandas Timestamps or
+    None when no data is loaded.
+    """
+    if not date_range or pd.isna(date_range[0]) or pd.isna(date_range[1]):
+        return "Hertz · Weekly Business Review"
+    lo, hi = date_range
+    if lo.date() == hi.date():
+        return f"Hertz WBR · Coverage: {lo.strftime('%b')} {lo.day}, {lo.year}"
+    if lo.year != hi.year:
+        lo_str = f"{lo.strftime('%b')} {lo.day}, {lo.year}"
+    elif lo.month != hi.month:
+        lo_str = f"{lo.strftime('%b')} {lo.day}"
+    else:
+        lo_str = f"{lo.strftime('%b')} {lo.day}"
+    hi_str = f"{hi.strftime('%b')} {hi.day}, {hi.year}"
+    return f"Hertz WBR · Coverage: {lo_str} – {hi_str}"
 
 
 def _fmt_seconds(val) -> str:
@@ -2138,6 +2118,7 @@ vendor_summaries: dict = {}
 interval_df = pd.DataFrame()
 data_ok = False
 call_date: str = None
+call_date_range = None   # (min CallDate, max CallDate) — drives the WBR coverage header
 
 if data_source == "📁 Upload CSV":
     stored = st.session_state.get("stored_files")
@@ -2153,9 +2134,12 @@ if data_source == "📁 Upload CSV":
         if not raw.empty:
             if "CallDate" in raw.columns:
                 try:
-                    call_date = pd.to_datetime(raw["CallDate"], errors="coerce").max().strftime("%m/%d/%Y")
+                    _dates = pd.to_datetime(raw["CallDate"], errors="coerce").dropna()
+                    call_date = _dates.max().strftime("%m/%d/%Y")
+                    call_date_range = (_dates.min(), _dates.max())
                 except Exception:
                     call_date = None
+                    call_date_range = None
             _active_mapping  = st.session_state.get("custom_mapping")   # None → use built-in
             if _active_mapping:
                 # Exception rules: LOB renames apply before aggregation
@@ -2194,12 +2178,12 @@ else:  # SharePoint
         if _raw_sp is not None and not _raw_sp.empty:
             if "CallDate" in _raw_sp.columns:
                 try:
-                    call_date = (
-                        pd.to_datetime(_raw_sp["CallDate"], errors="coerce")
-                        .max().strftime("%m/%d/%Y")
-                    )
+                    _dates = pd.to_datetime(_raw_sp["CallDate"], errors="coerce").dropna()
+                    call_date = _dates.max().strftime("%m/%d/%Y")
+                    call_date_range = (_dates.min(), _dates.max())
                 except Exception:
                     call_date = None
+                    call_date_range = None
             _active_mapping  = st.session_state.get("custom_mapping")
             if _active_mapping:
                 _active_mapping = _rules_apply_to_mapping(
@@ -2406,7 +2390,7 @@ st.markdown(
       <div class="hdr-beam"></div>
       <div>
         <div class="hdr-eyebrow">Hertz &nbsp;·&nbsp; Weekly Business Review</div>
-        <div class="hdr-title">{_data_as_of(interval_df, call_date)}</div>
+        <div class="hdr-title">{_coverage_header(call_date_range)}</div>
       </div>
       <div class="live-badge">
         <div class="live-dot"></div>
@@ -2435,13 +2419,11 @@ if data_ok:
         unsafe_allow_html=True,
     )
 
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+tab1, tab2, tab3, tab4, tab7, tab8 = st.tabs([
     "📊 Voice Performance Summary",
     "⏱️ Per Interval",
     "🗺️ Mapping Manager",
     "🎯 Targets Editor",
-    "📑 ASA Report Export",
-    "🧑‍💼 Agent AHT",
     "📅 Daily Forecast",
     "🕸️ Mapping Network",
 ])
@@ -2951,186 +2933,6 @@ with tab4:
                 use_container_width=True,
                 height=200,
             )
-
-# ── Tab 5: ASA Report Export ──────────────────────────────────────────────────
-with tab5:
-    st.subheader("Daily ASA Report")
-    st.caption(
-        "Generates the stakeholder ASA Report workbook — one sheet per Line of Business "
-        "with an NCO vs ASA chart, an ASA Per Vendor chart, and an auto-written analysis — "
-        "built from the same data currently loaded on this dashboard."
-    )
-
-    if not data_ok or interval_df.empty:
-        st.info("⬆️ Load data from the sidebar first to generate the report.")
-    else:
-        _covered = [lob for lob in _ASA_LOB_SHEETS.values() if lob in set(interval_df["LOB"])]
-        st.markdown(
-            f"**Sheets included:** {', '.join(_ASA_LOB_SHEETS.keys())}  \n"
-            f"**LOBs with data today:** {len(_covered)} / {len(_ASA_LOB_SHEETS)}"
-        )
-
-        if st.button("📑 Generate Excel Report", type="primary"):
-            with st.spinner("Building workbook…"):
-                _xlsx_bytes = build_asa_report_workbook(interval_df, call_date)
-            st.session_state["asa_report_bytes"] = _xlsx_bytes
-            st.session_state["asa_report_name"] = _asa_report_filename(call_date)
-            st.success("✅ Report generated — download below.")
-
-        if "asa_report_bytes" in st.session_state:
-            st.download_button(
-                "⬇️ Download ASA Report (.xlsx)",
-                data=st.session_state["asa_report_bytes"],
-                file_name=st.session_state["asa_report_name"],
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
-            )
-
-# ── Tab 6: Agent AHT ──────────────────────────────────────────────────────────
-with tab6:
-    st.subheader("Agent AHT")
-    st.caption(
-        "Upload the **Roadside AHT** export (CSV) to view Average Handle Time per agent, "
-        "per date and per site — *Roadside PH = Philippines · Roadside = Lubbock, US*. "
-        "AHT is in seconds, weighted by handled calls; rows with no recorded AHT are excluded."
-    )
-
-    _aht_files = st.file_uploader(
-        "Upload Roadside AHT CSV(s)", type=["csv"], key="agent_aht_upload",
-        accept_multiple_files=True,
-        help="You can drop several exports at once — overlapping rows are counted only once.",
-    )
-
-    if not _aht_files:
-        st.info("⬆️ Upload one or more Roadside AHT CSVs to see the agent-level view.")
-    else:
-        _aht_df = None
-        try:
-            _aht_df = parse_agent_aht(_aht_files)
-        except Exception as _aht_err:
-            st.error(f"Could not read the file: {_aht_err}")
-
-        if _aht_df is not None and _aht_df.empty:
-            st.warning("No usable rows found — every row is excluded or has zero handled calls.")
-        elif _aht_df is not None:
-            _aht_sites = sorted(_aht_df["Site"].unique())
-            _aht_dates = sorted(_aht_df["Date"].unique())
-
-            _aht_f1, _aht_f2 = st.columns([2, 3])
-            with _aht_f1:
-                _aht_site_sel = st.multiselect(
-                    "Site", _aht_sites, default=_aht_sites, key="agent_aht_sites"
-                )
-            with _aht_f2:
-                _aht_date_sel = st.multiselect(
-                    "Date", _aht_dates, default=_aht_dates,
-                    format_func=lambda d: d.strftime("%b %d, %Y"),
-                    key="agent_aht_dates",
-                )
-
-            _aht_sel = _aht_df[
-                _aht_df["Site"].isin(_aht_site_sel) & _aht_df["Date"].isin(_aht_date_sel)
-            ]
-            if _aht_sel.empty:
-                st.warning("No data for the selected filters.")
-            else:
-                _aht_sites_view = site_aht_pivot(_aht_sel)
-                _aht_agents = agent_aht_pivot(_aht_sel)
-
-                # ── AHT comparison chart ───────────────────────────────────
-                _aht_trend = (
-                    _aht_sel.groupby(["Site", "Date"], as_index=False)
-                    .agg(Handled=("Handled", "sum"), HandleTime=("HandleTime", "sum"))
-                )
-                _aht_trend["AHT"] = (_aht_trend["HandleTime"] / _aht_trend["Handled"]).round(1)
-                _aht_x_order = [d.strftime("%b %d") for d in sorted(_aht_trend["Date"].unique())]
-                _aht_palette = ["#1D4675", "#E4A11B", "#4C9F70", "#C0504D"]
-                _aht_fig = go.Figure()
-                for _aht_i, _aht_site in enumerate(sorted(_aht_trend["Site"].unique())):
-                    _aht_sd = _aht_trend[_aht_trend["Site"] == _aht_site].sort_values("Date")
-                    _aht_color = _aht_palette[_aht_i % len(_aht_palette)]
-                    _aht_fig.add_trace(go.Scatter(
-                        x=[d.strftime("%b %d") for d in _aht_sd["Date"]],
-                        y=_aht_sd["AHT"],
-                        name=_aht_site,
-                        mode="lines+markers+text",
-                        text=[f"{v:,.0f}" for v in _aht_sd["AHT"]],
-                        textposition="top center",
-                        line=dict(color=_aht_color, width=3),
-                        marker=dict(color=_aht_color, size=9),
-                    ))
-                _aht_fig.update_layout(
-                    title="AHT Comparison by Site",
-                    yaxis_title="AHT (seconds)",
-                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                    height=380,
-                    margin=dict(l=40, r=20, t=70, b=40),
-                )
-                _aht_fig.update_xaxes(categoryorder="array", categoryarray=_aht_x_order)
-                st.plotly_chart(_aht_fig, use_container_width=True)
-
-                # ── AHT by Site ────────────────────────────────────────────
-                _s_hdr, _s_copy = st.columns([8, 2])
-                with _s_hdr:
-                    st.markdown("#### AHT by Site")
-                with _s_copy:
-                    _copy_html_button(
-                        _aht_table_html(_aht_sites_view, "AHT by Site"),
-                        "aht_site",
-                    )
-                st.dataframe(
-                    _aht_sites_view,
-                    use_container_width=True, hide_index=True,
-                )
-
-                # ── AHT per Agent ──────────────────────────────────────────
-                _a_hdr, _a_copy = st.columns([8, 2])
-                with _a_hdr:
-                    st.markdown("#### AHT per Agent")
-                with _a_copy:
-                    _copy_html_button(
-                        _aht_table_html(_aht_agents, "AHT per Agent"),
-                        "aht_agents",
-                    )
-                st.caption(
-                    f"{len(_aht_agents)} agents · click a column header to sort · "
-                    "**Overall AHT** is weighted across the selected dates"
-                )
-                st.dataframe(
-                    _aht_agents,
-                    use_container_width=True, hide_index=True,
-                    height=min(38 * (len(_aht_agents) + 1) + 4, 620),
-                )
-                st.download_button(
-                    "⬇️ Download Agent AHT (.csv)",
-                    data=_aht_agents.to_csv(index=False).encode("utf-8-sig"),
-                    file_name="agent_aht.csv",
-                    mime="text/csv",
-                )
-
-                # ── Excel report ───────────────────────────────────────────
-                st.markdown("---")
-                st.markdown("#### Excel Report")
-                st.caption(
-                    "Generates a workbook with the site summary, the AHT comparison "
-                    "chart, and the full per-agent view — built from the filters above."
-                )
-                if st.button("📑 Generate Excel Report", type="primary", key="agent_aht_xlsx_btn"):
-                    with st.spinner("Building workbook…"):
-                        st.session_state["agent_aht_xlsx"] = build_agent_aht_workbook(
-                            _aht_sites_view, _aht_agents
-                        )
-                        st.session_state["agent_aht_xlsx_name"] = _aht_report_filename(_aht_date_sel)
-                    st.success("✅ Report generated — download below.")
-
-                if "agent_aht_xlsx" in st.session_state:
-                    st.download_button(
-                        "⬇️ Download Agent AHT Report (.xlsx)",
-                        data=st.session_state["agent_aht_xlsx"],
-                        file_name=st.session_state["agent_aht_xlsx_name"],
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True,
-                    )
 
 # ── Tab 7: Daily Forecast ─────────────────────────────────────────────────────
 with tab7:
