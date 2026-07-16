@@ -181,12 +181,18 @@ def prepare(
     else:
         df["ABN"] = (df["NCO"] - df["NCH"]).clip(lower=0)
 
-    # 3. Parse interval into 30-min buckets
-    if "Interval" in df.columns:
-        df["Interval"] = pd.to_datetime(df["Interval"], errors="coerce")
-        df["Interval30"] = df["Interval"].dt.floor("30min")
+    # 3. Bucket rows by coverage week (Sunday start) — the WBR variant breaks
+    #    performance down per week rather than per 30-min interval. CallDate
+    #    carries the calendar day; the Interval timestamp is the fallback.
+    if "CallDate" in df.columns:
+        _dates = pd.to_datetime(df["CallDate"], errors="coerce")
+    elif "Interval" in df.columns:
+        _dates = pd.to_datetime(df["Interval"], errors="coerce")
     else:
-        df["Interval30"] = pd.NaT
+        _dates = pd.Series(pd.NaT, index=df.index)
+    df["Interval30"] = (
+        _dates - pd.to_timedelta((_dates.dt.weekday + 1) % 7, unit="D")
+    ).dt.normalize()
 
     # 4. Enrich with LOB / Vendor via skill mapping
     df = _enrich(df, mapping=custom_mapping)
@@ -255,8 +261,10 @@ def prepare(
         _aggregate(df, ["LOB", "Vendor", "Interval30"]),
         custom_targets=custom_targets,
     )
+    # ISO week-start labels sort chronologically as plain strings, so every
+    # downstream sort/groupby("Interval") stays correct.
     if pd.api.types.is_datetime64_any_dtype(interval["Interval30"]):
-        interval["Interval30"] = interval["Interval30"].dt.strftime("%H:%M")
+        interval["Interval30"] = interval["Interval30"].dt.strftime("%Y-%m-%d")
     interval["Interval30"] = interval["Interval30"].fillna("N/A").astype(str)
     interval = interval.rename(columns={"Interval30": "Interval"})
     interval = interval.sort_values(["Interval", "LOB", "Vendor"]).reset_index(drop=True)

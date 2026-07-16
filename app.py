@@ -1719,7 +1719,7 @@ def _summary_dialog(df: pd.DataFrame, table_key: str):
     )
 
 
-@st.dialog("⏱️ 30-Minute Interval Breakdown", width="large")
+@st.dialog("📆 Weekly Breakdown", width="large")
 def _interval_dialog(df: pd.DataFrame):
     """Render interval table as static HTML — no internal scroll, screenshot-ready."""
     st.markdown("""
@@ -1771,8 +1771,9 @@ def _interval_dialog(df: pd.DataFrame):
         if col in ("NCO", "NCH", "ABN", "Forecast Volume"):               return _fmt_int(val)
         return str(val) if pd.notna(val) else "—"
 
+    _iv_labels = {"Interval": "Week Starting"}
     _iv_widths = {
-        "Interval": 65, "LOB": 120, "Vendor": 80,
+        "Interval": 100, "LOB": 120, "Vendor": 80,
         "NCO": 72, "NCH": 72,
         "Target AHT": 72, "AHT": 72, "AHT Var%": 72,
         "ABN": 72, "Target ABN%": 72, "ABN%": 72,
@@ -1784,7 +1785,7 @@ def _interval_dialog(df: pd.DataFrame):
     ths = "".join(
         f'<th style="background:{HDR_BG};color:white;padding:5px 6px;'
         f'border:1px solid #667;font-size:11px;font-weight:700;'
-        f'text-align:{"left" if c in left_cols_iv else "center"}">{c}</th>'
+        f'text-align:{"left" if c in left_cols_iv else "center"}">{_iv_labels.get(c, c)}</th>'
         for c in present
     )
     rows_html = [f"<tr>{ths}</tr>"]
@@ -1891,7 +1892,7 @@ def _display_interval(df: pd.DataFrame, lob_filter: list, vendor_filter: list):
             fig1.update_layout(
                 title="AHT vs Target AHT",
                 yaxis_title="Seconds",
-                xaxis_title="Interval",
+                xaxis_title="Week Starting",
                 height=320,
                 legend=dict(orientation="h", y=-0.35),
                 margin=dict(l=10, r=10, t=40, b=10),
@@ -1913,7 +1914,7 @@ def _display_interval(df: pd.DataFrame, lob_filter: list, vendor_filter: list):
                 title="Volume: Offered vs Handled",
                 barmode="group",
                 yaxis_title="Calls",
-                xaxis_title="Interval",
+                xaxis_title="Week Starting",
                 height=320,
                 legend=dict(orientation="h", y=-0.35),
                 margin=dict(l=10, r=10, t=40, b=10),
@@ -1944,7 +1945,7 @@ def _display_interval(df: pd.DataFrame, lob_filter: list, vendor_filter: list):
             fig3.update_layout(
                 title="AHT & ASA over Time",
                 yaxis_title="Seconds",
-                xaxis_title="Interval",
+                xaxis_title="Week Starting",
                 height=320,
                 legend=dict(orientation="h", y=-0.35),
                 margin=dict(l=10, r=10, t=40, b=10),
@@ -1963,6 +1964,7 @@ def _display_interval(df: pd.DataFrame, lob_filter: list, vendor_filter: list):
     ]
     present = [c for c in display_cols if c in filtered.columns]
     view = filtered[present].copy()
+    view = view.rename(columns={"Interval": "Week Starting"})
 
     styled = _style_interval(view)
     fmt = {}
@@ -2406,7 +2408,7 @@ if data_ok:
 
 tab1, tab2, tab3, tab4, tab7, tab8 = st.tabs([
     "📊 Voice Performance Summary",
-    "⏱️ Per Interval",
+    "📆 Weekly Breakdown",
     "🗺️ Mapping Manager",
     "🎯 Targets Editor",
     "📅 Daily Forecast",
@@ -2511,7 +2513,7 @@ with tab1:
                 _display_summary(vdf, table_key=f"vendor_{vendor}")
                 _display_abn_analysis(vdf, interval_df=interval_df, vendor=vendor)
 
-# ── Tab 2: Per Interval ───────────────────────────────────────────────────────
+# ── Tab 2: Weekly Breakdown ───────────────────────────────────────────────────
 with tab2:
     if data_ok and not interval_df.empty:
         all_lobs = sorted(
@@ -2541,7 +2543,7 @@ with tab2:
 
         iv_hdr, iv_btn = st.columns([9, 1])
         with iv_hdr:
-            st.subheader("30-Minute Interval Breakdown")
+            st.subheader("Weekly Breakdown")
         with iv_btn:
             st.markdown("<div style='padding-top:8px'></div>", unsafe_allow_html=True)
             _iv_filtered = interval_df.copy()
@@ -2553,7 +2555,7 @@ with tab2:
                 _interval_dialog(_iv_filtered)
         _display_interval(interval_df, lob_sel, vendor_sel)
     elif data_ok:
-        st.info("No interval data available in the loaded files.")
+        st.info("No weekly data available in the loaded files.")
 
 # ── Tab 3: Mapping Manager ────────────────────────────────────────────────────
 with tab3:
