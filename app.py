@@ -2110,6 +2110,26 @@ data_ok = False
 call_date: str = None
 call_date_range = None   # (min CallDate, max CallDate) — drives the WBR coverage header
 
+_PERF_CSV_COLS = {
+    # every raw header spelling the pipeline understands (lowercased)
+    "skillname", "skill name and number", "skill name and number (h)",
+    "suppliername", "interval", "intervalstarttime", "calldate",
+    "nco", "numbero ffered", "nch", "numberhandled", "aht", "abn", "asa",
+    "speedofanswer", "totalservicelevelcalls", "total service level calls",
+    "servicelevelcalls",
+}
+
+
+def _read_perf_csv(buf) -> pd.DataFrame:
+    """Read only the columns the pipeline uses. Multi-week exports carry
+    dozens of extra columns; skipping them at parse time keeps read_csv's
+    memory peak inside the 1 GB container."""
+    header = pd.read_csv(buf, nrows=0)
+    buf.seek(0)
+    use = [c for c in header.columns if str(c).strip().lower() in _PERF_CSV_COLS]
+    return pd.read_csv(buf, usecols=use or None)
+
+
 if data_source == "📁 Upload CSV":
     stored = st.session_state.get("stored_files")
     if stored:
@@ -2119,7 +2139,7 @@ if data_source == "📁 Upload CSV":
         for f in stored:
             try:
                 _bytes = _gzip.decompress(f["gz"]) if "gz" in f else f["data"]
-                frames.append(pd.read_csv(_io.BytesIO(_bytes)))
+                frames.append(_read_perf_csv(_io.BytesIO(_bytes)))
             except Exception as e:
                 st.warning(f"Could not read {f['name']}: {e}")
         raw = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
