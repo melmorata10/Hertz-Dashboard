@@ -172,6 +172,12 @@ def add_forecast_cols(
             if not fc_cols:
                 continue
             fc = sum(vols.get(str(c).strip().upper(), 0.0) for c in fc_cols)
+            if fc <= 0 and lob_key in vols:
+                # The mapped column(s) are missing or empty in this workbook,
+                # but it has a column named like the LOB itself — use that.
+                # (e.g. the map expects "Fleet" but the sheet header drifted
+                # to "Fleet Desk".) Real data beats a stale mapping.
+                fc = vols[lob_key]
             if fc <= 0:
                 continue
             out.at[i, "Forecast Volume"] = fc
