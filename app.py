@@ -59,7 +59,7 @@ except ImportError:
 
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="Daily Performance Report",
+    page_title="Weekly Business Review",
     page_icon="🚗",
     layout="wide",
 )
@@ -544,7 +544,7 @@ section.main > div > div > div > div > div { animation: fadeSlideIn 0.4s ease bo
 def _ct_now() -> str:
     ct = datetime.now(timezone(timedelta(hours=-5)))
     hour = ct.strftime("%I%p").lstrip("0")  # cross-platform: strip leading zero
-    return f"Hertz Performance as of {hour} CT"
+    return f"Hertz WBR as of {hour} CT"
 
 
 def _data_as_of(interval_df: pd.DataFrame, call_date: str = None) -> str:
@@ -565,8 +565,8 @@ def _data_as_of(interval_df: pd.DataFrame, call_date: str = None) -> str:
                 date_str = f"{d.strftime('%b')} {d.day}"  # e.g. "May 9"
             except Exception:
                 date_str = str(call_date)
-            return f"Hertz Performance · {date_str} · {hour_str} CT"
-        return f"Hertz Performance as of {hour_str} CT"
+            return f"Hertz WBR · {date_str} · {hour_str} CT"
+        return f"Hertz WBR as of {hour_str} CT"
     except Exception:
         return _ct_now()
 
@@ -2040,7 +2040,7 @@ with st.sidebar:
           <div style='font-size:9px; letter-spacing:3.5px; margin-top:10px;
                       text-transform:uppercase; font-weight:700;
                       animation:subtitleShift 3s ease-in-out infinite;'>
-            Powered by Callinsite
+            Weekly Business Review
           </div>
         </div>
         """,
@@ -2405,7 +2405,7 @@ st.markdown(
     <div class="hdr-wrap">
       <div class="hdr-beam"></div>
       <div>
-        <div class="hdr-eyebrow">Hertz &nbsp;·&nbsp; Powered by Callinsite</div>
+        <div class="hdr-eyebrow">Hertz &nbsp;·&nbsp; Weekly Business Review</div>
         <div class="hdr-title">{_data_as_of(interval_df, call_date)}</div>
       </div>
       <div class="live-badge">
