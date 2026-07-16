@@ -72,19 +72,21 @@ def _enrich(df: pd.DataFrame, mapping: dict = None) -> pd.DataFrame:
     if mapping is None:
         mapping = SKILL_TO_LOB
 
-    def _lookup(row):
-        skill = str(row.get("SkillName", ""))
-        fallback_vendor = (
-            str(row.get("SupplierName", ""))
-            if pd.notna(row.get("SupplierName")) else "Unknown"
-        )
-        entry = mapping.get(skill, {})
-        return entry.get("lob", "Unknown"), entry.get("vendor", fallback_vendor)
+    # Vectorised lookup — row-wise .apply() on a multi-week WBR file (hundreds
+    # of thousands of rows) is slow and memory-hungry enough to OOM the
+    # 1 GB Streamlit Cloud container.
+    lob_map    = {k: (v.get("lob") or "Unknown") for k, v in mapping.items()}
+    vendor_map = {k: v.get("vendor") for k, v in mapping.items()}
 
-    results = df.apply(_lookup, axis=1, result_type="expand")
     df = df.copy()
-    df["LOB"]    = results[0].values
-    df["Vendor"] = results[1].values
+    skills = df["SkillName"].astype(str) if "SkillName" in df.columns else pd.Series("", index=df.index)
+    if "SupplierName" in df.columns:
+        fallback_vendor = df["SupplierName"].astype(str).where(df["SupplierName"].notna(), "Unknown")
+    else:
+        fallback_vendor = pd.Series("Unknown", index=df.index)
+
+    df["LOB"]    = skills.map(lob_map).fillna("Unknown")
+    df["Vendor"] = skills.map(vendor_map).fillna(fallback_vendor)
     return df
 
 
@@ -158,8 +160,15 @@ def prepare(
         empty = pd.DataFrame(columns=_EMPTY_COLS)
         return empty, {}, empty
 
-    # 1. Normalise column names
+    # 1. Normalise column names, then drop every column the pipeline doesn't
+    #    use — raw exports carry dozens of extra columns, and on a multi-week
+    #    WBR file those cost hundreds of MB across the copies made below.
     df = _normalise_columns(raw)
+    _NEEDED = [
+        "SkillName", "SupplierName", "Interval", "CallDate",
+        "NCO", "NCH", "AHT", "ABN", "ASA", "SpeedOfAnswer", "SLCalls",
+    ]
+    df = df[[c for c in _NEEDED if c in df.columns]]
 
     # 2. Coerce numerics (default missing columns to 0)
     for col in ("NCO", "NCH", "AHT", "ASA"):

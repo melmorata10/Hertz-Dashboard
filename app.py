@@ -2035,10 +2035,13 @@ with _ds_exp:
             accept_multiple_files=True,
             label_visibility="collapsed",
         )
-        # Persist uploaded bytes in session state so refreshes don't wipe the data
+        # Persist uploaded bytes in session state so refreshes don't wipe the
+        # data. Stored gzip-compressed: multi-week WBR files are large, and
+        # raw bytes held alongside the parsed DataFrames can OOM the container.
         if uploaded:
+            import gzip as _gzip
             st.session_state["stored_files"] = [
-                {"name": f.name, "data": f.read()} for f in uploaded
+                {"name": f.name, "gz": _gzip.compress(f.read())} for f in uploaded
             ]
         # Clear button — only show when data is stored
         if st.session_state.get("stored_files"):
@@ -2111,10 +2114,12 @@ if data_source == "📁 Upload CSV":
     stored = st.session_state.get("stored_files")
     if stored:
         import io as _io
+        import gzip as _gzip
         frames = []
         for f in stored:
             try:
-                frames.append(pd.read_csv(_io.BytesIO(f["data"])))
+                _bytes = _gzip.decompress(f["gz"]) if "gz" in f else f["data"]
+                frames.append(pd.read_csv(_io.BytesIO(_bytes)))
             except Exception as e:
                 st.warning(f"Could not read {f['name']}: {e}")
         raw = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
