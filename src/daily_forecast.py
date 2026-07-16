@@ -148,7 +148,16 @@ def add_forecast_cols(
     out["Forecast Volume"] = float("nan")
     out["Forecast Variance"] = float("nan")
 
-    sel = fc_df[(fc_df["Site"] == site) & (fc_df["Date"] == report_date)]
+    # WBR: report_date may be a (start, end) coverage span — the forecast is
+    # then summed over every day in the window, matching the actuals' window.
+    if isinstance(report_date, (tuple, list)):
+        _lo, _hi = report_date
+        sel = fc_df[
+            (fc_df["Site"] == site)
+            & (fc_df["Date"] >= _lo) & (fc_df["Date"] <= _hi)
+        ]
+    else:
+        sel = fc_df[(fc_df["Site"] == site) & (fc_df["Date"] == report_date)]
     if not sel.empty:
         # All name matching is case/whitespace-insensitive: "REX TNC",
         # "Rex TNC" and "rex tnc " are the same column, so nobody has to

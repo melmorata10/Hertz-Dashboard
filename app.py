@@ -2295,10 +2295,17 @@ if data_ok and _fc_data is not None and call_date:
     if _fc_report_date is not None:
         _fc_today = datetime.now(timezone(timedelta(hours=-5))).date()
         if _fc_report_date < _fc_today:
+            # WBR: the forecast window is the WHOLE coverage span of the
+            # uploaded data, not just its final day — actuals and forecast
+            # must cover the same dates for the variance to mean anything.
+            _fc_span = (
+                (call_date_range[0].date(), call_date_range[1].date())
+                if call_date_range else _fc_report_date
+            )
             # Guarded: a bad forecast may cost its columns, never the dashboard.
             try:
                 summary_df = add_forecast_cols(
-                    summary_df, _fc_data, _fc_report_date, "Consolidated",
+                    summary_df, _fc_data, _fc_span, "Consolidated",
                     lob_map=_fc_lob_map,
                 )
                 _fc_sites = _fc_data["Site"].unique()
@@ -2306,7 +2313,7 @@ if data_ok and _fc_data is not None and call_date:
                     _fc_sheet = _fc_resolve_vendor_site(_fc_vendor, _fc_sites)
                     if _fc_sheet:
                         vendor_summaries[_fc_vendor] = add_forecast_cols(
-                            vendor_summaries[_fc_vendor], _fc_data, _fc_report_date, _fc_sheet,
+                            vendor_summaries[_fc_vendor], _fc_data, _fc_span, _fc_sheet,
                             lob_map=_fc_lob_map,
                         )
             except Exception as _fc_apply_exc:
