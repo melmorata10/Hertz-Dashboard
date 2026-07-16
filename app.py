@@ -51,6 +51,15 @@ st.set_page_config(
     page_title="Weekly Business Review",
     page_icon="🚗",
     layout="wide",
+    initial_sidebar_state="collapsed",
+)
+
+# WBR: the sidebar is hidden entirely — data source & upload live on the main
+# page. Also hide the expand-sidebar chevron so it can't be reopened.
+st.markdown(
+    "<style>[data-testid='stSidebar'], [data-testid='stSidebarCollapsedControl'], "
+    "[data-testid='stExpandSidebarButton'] { display: none !important; }</style>",
+    unsafe_allow_html=True,
 )
 
 # ── Load shared server-side state on first visit ──────────────────────────────
@@ -1990,50 +1999,26 @@ def _load_from_uploads(files) -> pd.DataFrame:
         try:
             frames.append(pd.read_csv(io.BytesIO(f.read())))
         except Exception as e:
-            st.sidebar.warning(f"Could not read {f.name}: {e}")
+            st.warning(f"Could not read {f.name}: {e}")
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
 
 
-# ── Sidebar ───────────────────────────────────────────────────────────────────
-with st.sidebar:
-    st.markdown(
-        """
-        <style>
-        @keyframes logoPulse {
-            0%,100% { box-shadow: 0 4px 18px rgba(255,215,0,0.45), 0 0 0 0 rgba(255,215,0,0.2); }
-            50%      { box-shadow: 0 6px 26px rgba(255,215,0,0.65), 0 0 18px rgba(255,215,0,0.18); }
-        }
-        @keyframes subtitleShift {
-            0%,100% { color: rgba(255,215,0,0.65); }
-            50%      { color: rgba(255,215,0,0.95); }
-        }
-        </style>
-        <div style='text-align:center; padding:22px 0 12px'>
-          <div style='display:inline-block; background:linear-gradient(135deg,#FFD700 0%,#f5c400 60%,#e8b000 100%);
-                      padding:8px 26px; border-radius:7px;
-                      animation:logoPulse 3s ease-in-out infinite;'>
-            <span style='font-family:Arial Black,Impact,sans-serif;
-                         font-size:28px; font-weight:900; color:#0a1220;
-                         letter-spacing:3px; line-height:1'>HERTZ</span>
-          </div>
-          <div style='font-size:9px; letter-spacing:3.5px; margin-top:10px;
-                      text-transform:uppercase; font-weight:700;
-                      animation:subtitleShift 3s ease-in-out infinite;'>
-            Weekly Business Review
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-    st.markdown("---")
+# ── Main-page data source panel (WBR has no sidebar) ─────────────────────────
+# The header is rendered later in the script (it needs the coverage dates),
+# but this container reserves the top slot so it still appears first on page.
+_hdr_slot = st.container()
 
-    # ── Data source toggle ────────────────────────────────────────────────────
-    st.markdown("### 📂 Data Source")
+_ds_exp = st.expander(
+    "📂 Data Source & Upload",
+    expanded=not st.session_state.get("stored_files"),
+)
+with _ds_exp:
     data_source = st.radio(
         "data_source",
         options=["📁 Upload CSV", "☁️ SharePoint"],
         index=0,
+        horizontal=True,
         label_visibility="collapsed",
     )
 
@@ -2129,7 +2114,7 @@ if data_source == "📁 Upload CSV":
             try:
                 frames.append(pd.read_csv(_io.BytesIO(f["data"])))
             except Exception as e:
-                st.sidebar.warning(f"Could not read {f['name']}: {e}")
+                st.warning(f"Could not read {f['name']}: {e}")
         raw = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
         if not raw.empty:
             if "CallDate" in raw.columns:
@@ -2155,7 +2140,7 @@ if data_source == "📁 Upload CSV":
         else:
             st.warning("No data could be read from the stored files.")
     else:
-        st.info("⬆️ Upload your CSV files from the sidebar to load the dashboard.")
+        st.info("⬆️ Upload your CSV files in the **Data Source & Upload** panel above to load the dashboard.")
 
 else:  # SharePoint
     _cur_token = _sp_get_valid_token()
@@ -2198,12 +2183,12 @@ else:  # SharePoint
         elif _raw_sp is not None:
             st.warning("No CSV files found in the SharePoint folder.")
         else:
-            st.info("☁️ Click **🔄 Load / Refresh Data** in the sidebar to fetch data.")
+            st.info("☁️ Click **🔄 Load / Refresh Data** in the Data Source panel above to fetch data.")
     elif st.session_state.get("sp_token_info"):
         # Token expired
-        st.warning("⏱️ SharePoint session expired — please sign in again in the sidebar.")
+        st.warning("⏱️ SharePoint session expired — please sign in again in the Data Source panel above.")
     else:
-        st.info("☁️ Sign in to SharePoint using the sidebar to load data.")
+        st.info("☁️ Sign in to SharePoint in the Data Source panel above to load data.")
 
 # ── Daily Forecast → Forecast Volume / Forecast Variance enrichment ──────────
 # The forecast is persisted server-side (like the mapping): an upload by one
@@ -2306,10 +2291,10 @@ if data_ok and _fc_data is not None and call_date:
         else:
             _fc_not_past = _fc_report_date.strftime("%b %d, %Y")
 
-# ── Sidebar — export buttons & notes (only when data is ready) ───────────────
+# ── Export buttons & notes (only when data is ready) ─────────────────────────
 if data_ok and not summary_df.empty:
     import json as _json
-    with st.sidebar:
+    with _ds_exp:
         st.markdown("---")
         st.markdown("### 📤 Export")
         csv_bytes = summary_df.to_csv(index=False).encode("utf-8")
@@ -2321,8 +2306,8 @@ if data_ok and not summary_df.empty:
             use_container_width=True,
         )
 
-# ── Header ────────────────────────────────────────────────────────────────────
-st.markdown(
+# ── Header — rendered into the slot reserved at the top of the page ──────────
+_hdr_slot.markdown(
     f"""
     <style>
     @keyframes hdrGradient {{
@@ -2412,7 +2397,7 @@ if data_ok:
           <span style='font-size:17px'>⚠️</span>
           <span style='font-size:13px; color:#5a4200; font-weight:500; line-height:1.4'>
             <strong>Do not refresh the page</strong> — uploaded data will be lost.
-            Use the <strong>🗑️ Clear Data</strong> button in the sidebar to reset the dashboard.
+            Use the <strong>🗑️ Clear Data</strong> button in the Data Source panel to reset the dashboard.
           </span>
         </div>
         """,
