@@ -181,7 +181,7 @@ def prepare(
     else:
         df["ABN"] = (df["NCO"] - df["NCH"]).clip(lower=0)
 
-    # 3. Bucket rows by coverage week (Sunday start) — the WBR variant breaks
+    # 3. Bucket rows by coverage week (Monday start) — the WBR variant breaks
     #    performance down per week rather than per 30-min interval. CallDate
     #    carries the calendar day; the Interval timestamp is the fallback.
     if "CallDate" in df.columns:
@@ -191,7 +191,7 @@ def prepare(
     else:
         _dates = pd.Series(pd.NaT, index=df.index)
     df["Interval30"] = (
-        _dates - pd.to_timedelta((_dates.dt.weekday + 1) % 7, unit="D")
+        _dates - pd.to_timedelta(_dates.dt.weekday, unit="D")
     ).dt.normalize()
 
     # 4. Enrich with LOB / Vendor via skill mapping
