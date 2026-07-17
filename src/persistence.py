@@ -15,6 +15,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from src import state_backup as _bk
+
 _DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 _LOCK = threading.Lock()          # guard concurrent reads/writes
 
@@ -24,6 +26,26 @@ _MAPPING_DF_FILE = _DATA_DIR / "mapping_df.json"
 _TARGETS_FILE    = _DATA_DIR / "custom_targets.json"
 _FORECAST_FILE   = _DATA_DIR / "daily_forecast.json"
 _RULES_FILE      = _DATA_DIR / "exception_rules.json"
+
+# Every shared state file and its backup key. Saves mirror the file to the
+# Supabase backup; a fresh container restores whatever is missing at boot.
+_BACKUP_KEYS = {
+    "lob_comments":    _COMMENTS_FILE,
+    "custom_mapping":  _MAPPING_FILE,
+    "mapping_df":      _MAPPING_DF_FILE,
+    "custom_targets":  _TARGETS_FILE,
+    "daily_forecast":  _FORECAST_FILE,
+    "exception_rules": _RULES_FILE,
+}
+
+
+def restore_missing_from_backup() -> list[str]:
+    """Fresh container after a deploy: pull any state file missing from disk
+    out of the Supabase backup. Returns the keys restored (for a toast)."""
+    return [
+        key for key, path in _BACKUP_KEYS.items()
+        if not path.exists() and _bk.restore_file(key, path)
+    ]
 
 
 def _ensure_dir() -> None:
@@ -48,12 +70,14 @@ def save_comments(comments: dict) -> None:
             json.dumps(comments, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+    _bk.backup_file("lob_comments", _COMMENTS_FILE)
 
 
 def clear_comments() -> None:
     """Remove persisted comments (e.g. when Clear Data is clicked)."""
     with _LOCK:
         _COMMENTS_FILE.unlink(missing_ok=True)
+    _bk.delete_backup("lob_comments")
 
 
 # ── Custom mapping ────────────────────────────────────────────────────────────
@@ -75,12 +99,14 @@ def save_custom_mapping(mapping: dict) -> None:
             json.dumps(mapping, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+    _bk.backup_file("custom_mapping", _MAPPING_FILE)
 
 
 def clear_custom_mapping() -> None:
     """Remove the persisted custom mapping (revert to built-in)."""
     with _LOCK:
         _MAPPING_FILE.unlink(missing_ok=True)
+    _bk.delete_backup("custom_mapping")
 
 
 def load_mapping_df() -> pd.DataFrame | None:
@@ -104,12 +130,14 @@ def save_mapping_df(df: pd.DataFrame) -> None:
             json.dumps(df.to_dict("records"), ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+    _bk.backup_file("mapping_df", _MAPPING_DF_FILE)
 
 
 def clear_mapping_df() -> None:
     """Remove the persisted editable mapping table (revert to built-in)."""
     with _LOCK:
         _MAPPING_DF_FILE.unlink(missing_ok=True)
+    _bk.delete_backup("mapping_df")
 
 
 def load_mapping_mtime() -> float:
@@ -147,12 +175,14 @@ def save_targets(targets: dict) -> None:
             json.dumps(targets, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+    _bk.backup_file("custom_targets", _TARGETS_FILE)
 
 
 def clear_targets() -> None:
     """Remove persisted targets (revert to built-in)."""
     with _LOCK:
         _TARGETS_FILE.unlink(missing_ok=True)
+    _bk.delete_backup("custom_targets")
 
 
 def load_exception_rules() -> dict | None:
@@ -177,6 +207,7 @@ def save_exception_rules(text: str, rules: list) -> None:
             json.dumps({"text": text, "rules": rules}, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+    _bk.backup_file("exception_rules", _RULES_FILE)
 
 
 def load_exception_rules_mtime() -> float:
@@ -203,6 +234,7 @@ def save_daily_forecast(df: pd.DataFrame, name: str) -> None:
             json.dumps(payload, ensure_ascii=False),
             encoding="utf-8",
         )
+    _bk.backup_file("daily_forecast", _FORECAST_FILE)
 
 
 def load_daily_forecast() -> tuple[pd.DataFrame, str] | None:
@@ -225,6 +257,7 @@ def clear_daily_forecast() -> None:
     """Remove the persisted Daily Forecast."""
     with _LOCK:
         _FORECAST_FILE.unlink(missing_ok=True)
+    _bk.delete_backup("daily_forecast")
 
 
 def load_daily_forecast_mtime() -> float:

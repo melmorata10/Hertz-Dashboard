@@ -34,6 +34,7 @@ from src.persistence import (
     load_daily_forecast, save_daily_forecast,
     clear_daily_forecast, load_daily_forecast_mtime,
     load_exception_rules, save_exception_rules, load_exception_rules_mtime,
+    restore_missing_from_backup,
 )
 
 # SharePoint connector
@@ -61,6 +62,16 @@ st.markdown(
     "[data-testid='stExpandSidebarButton'] { display: none !important; }</style>",
     unsafe_allow_html=True,
 )
+
+# ── Restore wiped state from the off-container backup ────────────────────────
+# A deploy/reboot wipes the disk; any state file that is missing is pulled
+# back from the Supabase backup before anything below reads it. Attempted
+# once per session; a no-op when all files exist or no backup is configured.
+if not st.session_state.get("_backup_restore_done"):
+    _restored = restore_missing_from_backup()
+    st.session_state["_backup_restore_done"] = True
+    if _restored:
+        st.toast(f"♻️ Restored after redeploy: {', '.join(_restored)}")
 
 # ── Load shared server-side state on first visit ──────────────────────────────
 # session_state is per-browser; disk files are shared across ALL users.
