@@ -2927,8 +2927,8 @@ with tab4:
 
     st.markdown("---")
 
-    # ── Apply / Reset ─────────────────────────────────────────────────────────
-    _ta_col, _tr_col, _ts_col = st.columns([2, 1, 3])
+    # ── Apply / Reset / Download ──────────────────────────────────────────────
+    _ta_col, _tr_col, _td_col, _ts_col = st.columns([2, 1, 1, 2])
 
     with _ta_col:
         if st.button("💾 Apply as Active Targets", type="primary", use_container_width=True):
@@ -2948,6 +2948,27 @@ with tab4:
             st.session_state.pop("targets_df",     None)
             clear_targets()
             st.rerun()
+
+    with _td_col:
+        # Export the table exactly as the upload parser expects it
+        # (LOB / AHT / ASA / ABN%), so a downloaded file re-imports as-is.
+        _tgt_csv = (
+            _edited_tgt.rename(columns={
+                "Target AHT (s)": "AHT",
+                "Target ASA (s)": "ASA",
+                "Target ABN%":    "ABN%",
+            })
+            .to_csv(index=False)
+            .encode("utf-8")
+        )
+        st.download_button(
+            "⬇️ Download CSV",
+            data=_tgt_csv,
+            file_name=f"hertz_targets_{datetime.now().strftime('%Y-%m-%d')}.csv",
+            mime="text/csv",
+            use_container_width=True,
+            key="targets_download_btn",
+        )
 
     with _ts_col:
         # Preview: current targets as a quick-reference table
