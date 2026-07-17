@@ -2141,6 +2141,37 @@ def _read_perf_csv(buf) -> pd.DataFrame:
     return pd.read_csv(buf, usecols=use or None)
 
 
+_WBR_ALL_WEEKS = "__ALL__"
+_wbr_week_options: list[str] = []   # ISO Monday week-starts found in the data
+
+
+def _apply_week_scope(raw: pd.DataFrame) -> pd.DataFrame:
+    """Apply the presenter's week picker (Voice Performance Summary tab).
+
+    Populates the global week list for the picker and returns only the rows
+    of the selected Monday-start week — or everything for "All weeks". The
+    Weekly Breakdown is fed the unfiltered data separately so it always
+    shows every week regardless of the picker.
+    """
+    global _wbr_week_options
+    if "CallDate" in raw.columns:
+        _d = pd.to_datetime(raw["CallDate"], errors="coerce")
+    elif "Interval" in raw.columns:
+        _d = pd.to_datetime(raw["Interval"], errors="coerce")
+    else:
+        return raw
+    wk = (
+        (_d - pd.to_timedelta(_d.dt.weekday, unit="D"))
+        .dt.normalize()
+        .dt.strftime("%Y-%m-%d")
+    )
+    _wbr_week_options = sorted(w for w in wk.dropna().unique())
+    pick = st.session_state.get("wbr_week_select", _WBR_ALL_WEEKS)
+    if pick == _WBR_ALL_WEEKS or pick not in _wbr_week_options:
+        return raw
+    return raw[wk == pick]
+
+
 if data_source == "📁 Upload CSV":
     stored = st.session_state.get("stored_files")
     if stored:
@@ -2155,9 +2186,12 @@ if data_source == "📁 Upload CSV":
                 st.warning(f"Could not read {f['name']}: {e}")
         raw = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
         if not raw.empty:
-            if "CallDate" in raw.columns:
+            # Scope the summary (and header/forecast dates) to the presented
+            # week; the Weekly Breakdown below always gets the full data.
+            raw_scope = _apply_week_scope(raw)
+            if "CallDate" in raw_scope.columns:
                 try:
-                    _dates = pd.to_datetime(raw["CallDate"], errors="coerce").dropna()
+                    _dates = pd.to_datetime(raw_scope["CallDate"], errors="coerce").dropna()
                     call_date = _dates.max().strftime("%m/%d/%Y")
                     call_date_range = (_dates.min(), _dates.max())
                 except Exception:
@@ -2171,9 +2205,14 @@ if data_source == "📁 Upload CSV":
                 )
             _active_targets  = st.session_state.get("custom_targets")   # None → use built-in
             summary_df, vendor_summaries, interval_df = prepare(
-                raw, custom_mapping=_active_mapping, custom_targets=_active_targets,
+                raw_scope, custom_mapping=_active_mapping, custom_targets=_active_targets,
                 hidden_lobs=_HIDDEN_LOBS,
             )
+            if len(raw_scope) != len(raw):
+                _, _, interval_df = prepare(
+                    raw, custom_mapping=_active_mapping, custom_targets=_active_targets,
+                    hidden_lobs=_HIDDEN_LOBS,
+                )
             data_ok = True
         else:
             st.warning("No data could be read from the stored files.")
@@ -2199,9 +2238,10 @@ else:  # SharePoint
 
         _raw_sp = st.session_state.get("sp_raw_df")
         if _raw_sp is not None and not _raw_sp.empty:
-            if "CallDate" in _raw_sp.columns:
+            raw_scope = _apply_week_scope(_raw_sp)
+            if "CallDate" in raw_scope.columns:
                 try:
-                    _dates = pd.to_datetime(_raw_sp["CallDate"], errors="coerce").dropna()
+                    _dates = pd.to_datetime(raw_scope["CallDate"], errors="coerce").dropna()
                     call_date = _dates.max().strftime("%m/%d/%Y")
                     call_date_range = (_dates.min(), _dates.max())
                 except Exception:
@@ -2214,9 +2254,14 @@ else:  # SharePoint
                 )
             _active_targets  = st.session_state.get("custom_targets")
             summary_df, vendor_summaries, interval_df = prepare(
-                _raw_sp, custom_mapping=_active_mapping, custom_targets=_active_targets,
+                raw_scope, custom_mapping=_active_mapping, custom_targets=_active_targets,
                 hidden_lobs=_HIDDEN_LOBS,
             )
+            if len(raw_scope) != len(_raw_sp):
+                _, _, interval_df = prepare(
+                    _raw_sp, custom_mapping=_active_mapping, custom_targets=_active_targets,
+                    hidden_lobs=_HIDDEN_LOBS,
+                )
             data_ok = True
         elif _raw_sp is not None:
             st.warning("No CSV files found in the SharePoint folder.")
@@ -2460,6 +2505,28 @@ tab1, tab2, tab3, tab4, tab7, tab8 = st.tabs([
 
 # ── Tab 1: Voice Performance Summary ─────────────────────────────────────────
 with tab1:
+    if data_ok and _wbr_week_options:
+        # Presenting-week picker: scopes the KPIs, tables, header, and
+        # forecast window to one week. Weekly Breakdown always shows all.
+        def _wk_option_label(v: str) -> str:
+            if v == _WBR_ALL_WEEKS:
+                return "All weeks (full period)"
+            _ws = pd.Timestamp(v)
+            _we = _ws + pd.Timedelta(days=6)
+            return f"Week of {_ws.strftime('%b %d')} – {_we.strftime('%b %d, %Y')}"
+
+        _wk_col, _ = st.columns([1, 2])
+        with _wk_col:
+            st.selectbox(
+                "📆 Week to present",
+                options=[_WBR_ALL_WEEKS] + _wbr_week_options,
+                key="wbr_week_select",
+                format_func=_wk_option_label,
+                help="Scopes the KPIs, summary and vendor tables, header, and "
+                     "forecast to one week. The Weekly Breakdown tab always "
+                     "shows every week.",
+            )
+
     if data_ok and not summary_df.empty:
         # ── KPI headline tiles ─────────────────────────────────────────────────
         _kpi_cards(summary_df)
