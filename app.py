@@ -879,8 +879,9 @@ def _wbr_narrative(summary_df: pd.DataFrame, interval_df: pd.DataFrame) -> str:
         under = ahtv[ahtv["AHT Var%"] <= 0]
         if len(under) > 0:
             best = under.sort_values("AHT Var%").iloc[0]
+            _plural = "s" if len(under) != 1 else ""
             wins.append(
-                f"**{len(under)} LOBs at or under AHT target**, led by "
+                f"**{len(under)} LOB{_plural} at or under AHT target**, led by "
                 f"{best['LOB']} ({best['AHT Var%']:+.1f}% vs target)."
             )
         over = ahtv[ahtv["AHT Var%"] > 5].sort_values("NCO", ascending=False)
@@ -937,18 +938,94 @@ def _wbr_narrative(summary_df: pd.DataFrame, interval_df: pd.DataFrame) -> str:
             )
 
     # ── Week-over-week movement (needs 2+ weeks in the breakdown) ────────────
+    overall = []
     if interval_df is not None and not interval_df.empty and interval_df["Interval"].nunique() >= 2:
-        tmp = interval_df.copy()
-        tmp["_w"] = tmp["NCH"].fillna(0) * tmp["AHT"].fillna(0)
-        wk = tmp.groupby("Interval", sort=True).agg(
-            NCO=("NCO", "sum"), NCH=("NCH", "sum"),
-            ABN=("ABN", "sum"), _w=("_w", "sum"),
+        t = interval_df.copy()
+        t["_ahtw"]  = t["NCH"].fillna(0) * t["AHT"].fillna(0)
+        t["_asaw"]  = t["NCH"].fillna(0) * t["ASA"].fillna(0)
+        # SL% x NCO / 100 reconstructs the exact within-threshold call count,
+        # so weekly SL re-weights correctly instead of averaging percentages.
+        t["_slc"]   = t["SL%"] * t["NCO"] / 100.0
+        t["_slnco"] = t["NCO"].where(t["SL%"].notna())
+        wk = t.groupby("Interval", sort=True).agg(
+            NCO=("NCO", "sum"), NCH=("NCH", "sum"), ABN=("ABN", "sum"),
+            _ahtw=("_ahtw", "sum"), _asaw=("_asaw", "sum"),
+            _slc=("_slc", "sum"), _slnco=("_slnco", "sum"),
         )
-        wk["AHT"] = wk["_w"] / wk["NCH"].replace(0, float("nan"))
-        wk["ABN%"] = wk["ABN"] / wk["NCO"].replace(0, float("nan")) * 100
+        _nch = wk["NCH"].replace(0, float("nan"))
+        _nco = wk["NCO"].replace(0, float("nan"))
+        wk["AHT"]  = wk["_ahtw"] / _nch
+        wk["ASA"]  = wk["_asaw"] / _nch
+        wk["ABN%"] = wk["ABN"] / _nco * 100
+        wk["SL%"]  = wk["_slc"] / wk["_slnco"].replace(0, float("nan")) * 100
         last, prev = wk.iloc[-1], wk.iloc[-2]
+        _d_sl  = last["SL%"] - prev["SL%"]
         _d_aht = last["AHT"] - prev["AHT"]
+        _d_asa = last["ASA"] - prev["ASA"]
         _d_abn = last["ABN%"] - prev["ABN%"]
+
+        # Headline: direction of travel + the metric moves behind it
+        _drivers = []
+        if pd.notna(_d_aht) and abs(_d_aht) >= 3:
+            _drivers.append(f"AHT {_d_aht:+.0f}s")
+        if pd.notna(_d_asa) and abs(_d_asa) >= 3:
+            _drivers.append(f"ASA {_d_asa:+.0f}s")
+        if pd.notna(_d_abn) and abs(_d_abn) >= 0.3:
+            _drivers.append(f"abandonment {_d_abn:+.1f}pp")
+        _drv_txt = f", with {', '.join(_drivers)}" if _drivers else ""
+        if pd.notna(_d_sl) and _d_sl <= -1:
+            overall.append(
+                f"Performance **declined week-over-week** — SL {_d_sl:+.1f}pp "
+                f"to **{last['SL%']:.1f}%**{_drv_txt}."
+            )
+        elif pd.notna(_d_sl) and _d_sl >= 1:
+            overall.append(
+                f"Performance **improved week-over-week** — SL {_d_sl:+.1f}pp "
+                f"to **{last['SL%']:.1f}%**{_drv_txt}."
+            )
+        elif pd.notna(_d_sl):
+            overall.append(
+                f"Performance **held steady week-over-week** — SL at "
+                f"**{last['SL%']:.1f}%** ({_d_sl:+.1f}pp){_drv_txt}."
+            )
+        elif _drivers:
+            overall.append(f"Week-over-week movement: {', '.join(_drivers)}.")
+
+        # Per-LOB SL consistency: every-week achievers vs consecutive-miss streaks
+        if t["SL%"].notna().any():
+            lobwk = t.dropna(subset=["SL%"]).groupby(["LOB", "Interval"]).agg(
+                _slc=("_slc", "sum"), _n=("_slnco", "sum"),
+            )
+            lobwk["SL%"] = lobwk["_slc"] / lobwk["_n"].replace(0, float("nan")) * 100
+            _weeks = sorted(t["Interval"].unique())
+            _streaks, _steady = [], []
+            for _lob, _grp in lobwk.reset_index().groupby("LOB"):
+                _by_wk = _grp.set_index("Interval")["SL%"]
+                if len(_by_wk) < 2:
+                    continue
+                if (_by_wk >= 80).all():
+                    _steady.append(str(_lob))
+                    continue
+                _run = 0
+                for _w in reversed(_weeks):
+                    if _w in _by_wk.index and _by_wk[_w] < 80:
+                        _run += 1
+                    else:
+                        break
+                if _run >= 2:
+                    _streaks.append((str(_lob), _run))
+            if _steady:
+                _more = "…" if len(_steady) > 3 else ""
+                _plural = "s" if len(_steady) != 1 else ""
+                overall.append(
+                    f"**{len(_steady)} LOB{_plural} met the 80% SL threshold in every "
+                    f"week** of the period ({', '.join(_steady[:3])}{_more})."
+                )
+            for _lob, _run in sorted(_streaks, key=lambda x: -x[1])[:2]:
+                overall.append(
+                    f"**{_lob}** has missed the 80% SL threshold for "
+                    f"**{_run} consecutive weeks**."
+                )
         if pd.notna(_d_aht) and _d_aht <= -5:
             wins.append(f"AHT improved **{abs(_d_aht):.0f}s week-over-week** in the latest week.")
         elif pd.notna(_d_aht) and _d_aht >= 5:
@@ -977,7 +1054,12 @@ def _wbr_narrative(summary_df: pd.DataFrame, interval_df: pd.DataFrame) -> str:
         return "\n".join(f"- {i}" for i in items)
 
     return (
-        "#### 🔑 Key Wins\n"
+        "#### 📈 Overall Performance\n"
+        + _bullets(
+            overall[:4],
+            "Single-week view — load multiple weeks for week-over-week observations.",
+        )
+        + "\n\n#### 🔑 Key Wins\n"
         + _bullets(wins[:4], "No target-beating highlights this period.")
         + "\n\n#### ⚠️ Primary Risks & Pressure Points\n"
         + _bullets(risks[:5], "No LOB is materially off target — clean period.")
