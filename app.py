@@ -2419,6 +2419,15 @@ def _apply_week_scope(raw: pd.DataFrame) -> pd.DataFrame:
     return raw[wk == pick]
 
 
+# LOBs unticked in the summary's "LOBs to include" filter (session-scoped).
+# Applied as extra hidden LOBs to the SUMMARY scope only — the Weekly
+# Breakdown keeps its own independent checkbox filters.
+_vps_excluded = {
+    l for l in st.session_state.get("vps_lob_universe", [])
+    if st.session_state.get(f"vps_lob_{l}") is False
+}
+
+
 if data_source == "📁 Upload CSV":
     stored = st.session_state.get("stored_files")
     if stored:
@@ -2453,9 +2462,9 @@ if data_source == "📁 Upload CSV":
             _active_targets  = st.session_state.get("custom_targets")   # None → use built-in
             summary_df, vendor_summaries, interval_df = prepare(
                 raw_scope, custom_mapping=_active_mapping, custom_targets=_active_targets,
-                hidden_lobs=_HIDDEN_LOBS,
+                hidden_lobs=set(_HIDDEN_LOBS) | _vps_excluded,
             )
-            if len(raw_scope) != len(raw):
+            if len(raw_scope) != len(raw) or _vps_excluded:
                 _, _, interval_df = prepare(
                     raw, custom_mapping=_active_mapping, custom_targets=_active_targets,
                     hidden_lobs=_HIDDEN_LOBS,
@@ -2502,9 +2511,9 @@ else:  # SharePoint
             _active_targets  = st.session_state.get("custom_targets")
             summary_df, vendor_summaries, interval_df = prepare(
                 raw_scope, custom_mapping=_active_mapping, custom_targets=_active_targets,
-                hidden_lobs=_HIDDEN_LOBS,
+                hidden_lobs=set(_HIDDEN_LOBS) | _vps_excluded,
             )
-            if len(raw_scope) != len(_raw_sp):
+            if len(raw_scope) != len(_raw_sp) or _vps_excluded:
                 _, _, interval_df = prepare(
                     _raw_sp, custom_mapping=_active_mapping, custom_targets=_active_targets,
                     hidden_lobs=_HIDDEN_LOBS,
@@ -2519,6 +2528,15 @@ else:  # SharePoint
         st.warning("⏱️ SharePoint session expired — please sign in again in the Data Source panel above.")
     else:
         st.info("☁️ Sign in to SharePoint in the Data Source panel above to load data.")
+
+# Grow the summary LOB universe additively so excluded LOBs keep their
+# checkbox (an excluded LOB vanishes from summary_df, but must stay listed
+# or it could never be re-enabled).
+if data_ok and not summary_df.empty:
+    _vps_now = set(summary_df["LOB"]) - {"Grand Total"}
+    st.session_state["vps_lob_universe"] = sorted(
+        set(st.session_state.get("vps_lob_universe", [])) | _vps_now | _vps_excluded
+    )
 
 # ── Daily Forecast → Forecast Volume / Forecast Variance enrichment ──────────
 # The forecast is persisted server-side (like the mapping): an upload by one
@@ -2762,7 +2780,7 @@ with tab1:
             _we = _ws + pd.Timedelta(days=6)
             return f"Week of {_ws.strftime('%b %d')} – {_we.strftime('%b %d, %Y')}"
 
-        _wk_col, _ = st.columns([1, 2])
+        _wk_col, _lob_inc_col = st.columns([1, 2])
         with _wk_col:
             st.selectbox(
                 "📆 Week to present",
@@ -2773,6 +2791,33 @@ with tab1:
                      "forecast to one week. The Weekly Breakdown tab always "
                      "shows every week.",
             )
+        with _lob_inc_col:
+            _vps_universe = st.session_state.get("vps_lob_universe", [])
+            if _vps_universe:
+                st.markdown(
+                    "<div style='padding-top:28px'></div>", unsafe_allow_html=True
+                )
+                with st.expander("🔍 LOBs to include", expanded=False):
+                    _iba, _ibn, _ = st.columns([1, 1, 2])
+                    if _iba.button("✅ Select all", key="vps_lob_all_btn", use_container_width=True):
+                        for _l in _vps_universe:
+                            st.session_state[f"vps_lob_{_l}"] = True
+                        st.rerun()
+                    if _ibn.button("⬜ Clear all", key="vps_lob_none_btn", use_container_width=True):
+                        for _l in _vps_universe:
+                            st.session_state[f"vps_lob_{_l}"] = False
+                        st.rerun()
+                    _inc_cols = st.columns(3)
+                    _inc_count = 0
+                    for _i, _l in enumerate(_vps_universe):
+                        if _inc_cols[_i % 3].checkbox(_l, value=True, key=f"vps_lob_{_l}"):
+                            _inc_count += 1
+                if _inc_count < len(_vps_universe):
+                    st.caption(
+                        f"Including **{_inc_count} of {len(_vps_universe)}** LOBs — "
+                        "Grand Total, KPIs, vendor tables, and the analysis "
+                        "reflect only the ticked LOBs."
+                    )
 
     if data_ok and not summary_df.empty:
         # ── KPI headline tiles ─────────────────────────────────────────────────
@@ -2829,8 +2874,12 @@ with tab1:
             )
         with _an_col:
             _wk_pick = st.session_state.get("wbr_week_select", _WBR_ALL_WEEKS)
+            _nar_iv = (
+                interval_df[~interval_df["LOB"].isin(_vps_excluded)]
+                if _vps_excluded else interval_df
+            )
             st.markdown(_wbr_narrative(
-                _main_df, interval_df,
+                _main_df, _nar_iv,
                 focus_week=None if _wk_pick == _WBR_ALL_WEEKS else _wk_pick,
             ))
         st.markdown("---")
