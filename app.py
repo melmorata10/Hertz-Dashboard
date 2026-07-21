@@ -843,10 +843,18 @@ def _abn_driver_brief(row: pd.Series) -> str:
     return "; ".join(parts) if parts else "Review staffing & volume"
 
 
-def _wbr_narrative(summary_df: pd.DataFrame, interval_df: pd.DataFrame) -> str:
+def _wbr_narrative(
+    summary_df: pd.DataFrame,
+    interval_df: pd.DataFrame,
+    focus_week: str = None,
+) -> str:
     """Auto-written executive analysis for the WBR — Key Wins / Risks /
     Outlook — generated from the summary table, forecast columns, and the
-    week-over-week movement in the weekly breakdown."""
+    week-over-week movement in the weekly breakdown.
+
+    ``focus_week`` is the week picker's ISO week-start: week-over-week
+    deltas compare THAT week to the one before it, and streaks count up to
+    it. None (all weeks) anchors on the latest week in the data."""
     lobs = summary_df[summary_df["LOB"] != "Grand Total"].copy()
     _gt_rows = summary_df[summary_df["LOB"] == "Grand Total"]
     gt = _gt_rows.iloc[0] if not _gt_rows.empty else None
@@ -958,11 +966,23 @@ def _wbr_narrative(summary_df: pd.DataFrame, interval_df: pd.DataFrame) -> str:
         wk["ASA"]  = wk["_asaw"] / _nch
         wk["ABN%"] = wk["ABN"] / _nco * 100
         wk["SL%"]  = wk["_slc"] / wk["_slnco"].replace(0, float("nan")) * 100
-        last, prev = wk.iloc[-1], wk.iloc[-2]
-        _d_sl  = last["SL%"] - prev["SL%"]
-        _d_aht = last["AHT"] - prev["AHT"]
-        _d_asa = last["ASA"] - prev["ASA"]
-        _d_abn = last["ABN%"] - prev["ABN%"]
+        # Anchor on the presented week (week picker); default to the latest.
+        _wk_list = list(wk.index)
+        _pos = _wk_list.index(focus_week) if focus_week in _wk_list else len(_wk_list) - 1
+        _weeks_upto = _wk_list[: _pos + 1]
+        last = wk.iloc[_pos]
+        prev = wk.iloc[_pos - 1] if _pos > 0 else None
+        if prev is None:
+            _d_sl = _d_aht = _d_asa = _d_abn = float("nan")
+            overall.append(
+                f"Week of {_wk_list[0]} is the first week in the loaded "
+                "period — no prior week to compare against."
+            )
+        else:
+            _d_sl  = last["SL%"] - prev["SL%"]
+            _d_aht = last["AHT"] - prev["AHT"]
+            _d_asa = last["ASA"] - prev["ASA"]
+            _d_abn = last["ABN%"] - prev["ABN%"]
 
         # Headline: direction of travel + the metric moves behind it
         _drivers = []
@@ -997,10 +1017,11 @@ def _wbr_narrative(summary_df: pd.DataFrame, interval_df: pd.DataFrame) -> str:
                 _slc=("_slc", "sum"), _n=("_slnco", "sum"),
             )
             lobwk["SL%"] = lobwk["_slc"] / lobwk["_n"].replace(0, float("nan")) * 100
-            _weeks = sorted(t["Interval"].unique())
+            _weeks = _weeks_upto
             _streaks, _steady = [], []
             for _lob, _grp in lobwk.reset_index().groupby("LOB"):
                 _by_wk = _grp.set_index("Interval")["SL%"]
+                _by_wk = _by_wk[_by_wk.index.isin(_weeks_upto)]
                 if len(_by_wk) < 2:
                     continue
                 if (_by_wk >= 80).all():
@@ -1027,17 +1048,17 @@ def _wbr_narrative(summary_df: pd.DataFrame, interval_df: pd.DataFrame) -> str:
                     f"**{_run} consecutive weeks**."
                 )
         if pd.notna(_d_aht) and _d_aht <= -5:
-            wins.append(f"AHT improved **{abs(_d_aht):.0f}s week-over-week** in the latest week.")
+            wins.append(f"AHT improved **{abs(_d_aht):.0f}s week-over-week** vs the prior week.")
         elif pd.notna(_d_aht) and _d_aht >= 5:
-            risks.append(f"AHT up **{_d_aht:.0f}s week-over-week** in the latest week.")
+            risks.append(f"AHT up **{_d_aht:.0f}s week-over-week** vs the prior week.")
         if pd.notna(_d_abn) and _d_abn <= -0.5:
             wins.append(f"Abandon rate down **{abs(_d_abn):.1f}pp** vs prior week.")
         elif pd.notna(_d_abn) and _d_abn >= 0.5:
             risks.append(f"Abandon rate up **{_d_abn:.1f}pp** vs prior week.")
-        if prev["NCO"] > 0:
+        if prev is not None and prev["NCO"] > 0:
             _d_nco = (last["NCO"] - prev["NCO"]) / prev["NCO"] * 100
             outlook.append(
-                f"Latest week volume **{int(last['NCO']):,} offered** "
+                f"Week of {last.name}: **{int(last['NCO']):,} offered** "
                 f"({_d_nco:+.0f}% vs prior week)."
             )
 
@@ -2807,7 +2828,11 @@ with tab1:
                 "**ASA** = Avg Speed to Answer (s) · **Var%** = % variance vs target"
             )
         with _an_col:
-            st.markdown(_wbr_narrative(_main_df, interval_df))
+            _wk_pick = st.session_state.get("wbr_week_select", _WBR_ALL_WEEKS)
+            st.markdown(_wbr_narrative(
+                _main_df, interval_df,
+                focus_week=None if _wk_pick == _WBR_ALL_WEEKS else _wk_pick,
+            ))
         st.markdown("---")
 
         # ── Abandon Rate Analysis ──────────────────────────────────────────────
