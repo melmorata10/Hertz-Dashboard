@@ -1868,11 +1868,12 @@ def _chart_data(filtered: pd.DataFrame) -> pd.DataFrame:
 
 
 def _display_interval(df: pd.DataFrame, lob_filter: list, vendor_filter: list):
-    filtered = df.copy()
-    if lob_filter:
-        filtered = filtered[filtered["LOB"].isin(lob_filter)]
-    if vendor_filter:
-        filtered = filtered[filtered["Vendor"].isin(vendor_filter)]
+    # Checkbox semantics: the selections ARE the filter — an empty selection
+    # means nothing is shown (unlike the old multiselect, where empty meant
+    # "no filter").
+    filtered = df[
+        df["LOB"].isin(lob_filter) & df["Vendor"].isin(vendor_filter)
+    ].copy()
 
     # ── Charts ────────────────────────────────────────────────────────────────
     cd = _chart_data(filtered)
@@ -2635,32 +2636,41 @@ with tab2:
             if v not in ("Unknown", "", None)
         )
 
-        col1, col2 = st.columns([3, 2])
-        with col1:
-            lob_sel = st.multiselect(
-                "Filter by LOB",
-                options=all_lobs,
-                default=all_lobs,
-                key="lob_filter",
-            )
-        with col2:
-            vendor_sel = st.multiselect(
-                "Filter by Vendor / Supplier",
-                options=all_vendors,
-                default=all_vendors,
-                key="vendor_filter",
-            )
+        # ── Checkbox filters (replaces the old multiselect pill chips) ─────────
+        _flt_lob_col, _flt_vendor_col = st.columns([3, 2])
+        with _flt_lob_col:
+            with st.expander("🔍 Filter by LOB", expanded=False):
+                _ba, _bn, _ = st.columns([1, 1, 3])
+                if _ba.button("✅ Select all", key="wk_lob_all_btn", use_container_width=True):
+                    for _l in all_lobs:
+                        st.session_state[f"wk_lob_{_l}"] = True
+                if _bn.button("⬜ Clear all", key="wk_lob_none_btn", use_container_width=True):
+                    for _l in all_lobs:
+                        st.session_state[f"wk_lob_{_l}"] = False
+                _lob_cols = st.columns(4)
+                lob_sel = []
+                for _i, _l in enumerate(all_lobs):
+                    if _lob_cols[_i % 4].checkbox(_l, value=True, key=f"wk_lob_{_l}"):
+                        lob_sel.append(_l)
+            st.caption(f"Showing **{len(lob_sel)} of {len(all_lobs)}** LOBs")
+        with _flt_vendor_col:
+            with st.expander("🔍 Filter by Vendor / Supplier", expanded=False):
+                _vnd_cols = st.columns(2)
+                vendor_sel = []
+                for _i, _v in enumerate(all_vendors):
+                    if _vnd_cols[_i % 2].checkbox(_v, value=True, key=f"wk_vendor_{_v}"):
+                        vendor_sel.append(_v)
+            st.caption(f"Showing **{len(vendor_sel)} of {len(all_vendors)}** vendors")
 
         iv_hdr, iv_btn = st.columns([9, 1])
         with iv_hdr:
             st.subheader("Weekly Breakdown")
         with iv_btn:
             st.markdown("<div style='padding-top:8px'></div>", unsafe_allow_html=True)
-            _iv_filtered = interval_df.copy()
-            if lob_sel:
-                _iv_filtered = _iv_filtered[_iv_filtered["LOB"].isin(lob_sel)]
-            if vendor_sel:
-                _iv_filtered = _iv_filtered[_iv_filtered["Vendor"].isin(vendor_sel)]
+            _iv_filtered = interval_df[
+                interval_df["LOB"].isin(lob_sel)
+                & interval_df["Vendor"].isin(vendor_sel)
+            ].copy()
             if st.button("⛶", key="fs_interval", help="Expand table to full screen", use_container_width=True):
                 _interval_dialog(_iv_filtered)
         _display_interval(interval_df, lob_sel, vendor_sel)
