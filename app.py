@@ -843,6 +843,149 @@ def _abn_driver_brief(row: pd.Series) -> str:
     return "; ".join(parts) if parts else "Review staffing & volume"
 
 
+def _wbr_narrative(summary_df: pd.DataFrame, interval_df: pd.DataFrame) -> str:
+    """Auto-written executive analysis for the WBR — Key Wins / Risks /
+    Outlook — generated from the summary table, forecast columns, and the
+    week-over-week movement in the weekly breakdown."""
+    lobs = summary_df[summary_df["LOB"] != "Grand Total"].copy()
+    _gt_rows = summary_df[summary_df["LOB"] == "Grand Total"]
+    gt = _gt_rows.iloc[0] if not _gt_rows.empty else None
+    wins, risks, outlook = [], [], []
+
+    # ── Service level ─────────────────────────────────────────────────────────
+    if "SL%" in lobs.columns and lobs["SL%"].notna().any():
+        sl = lobs[lobs["SL%"].notna()]
+        good = sl[sl["SL%"] >= 80]
+        bad = sl[sl["SL%"] < 80].sort_values("NCO", ascending=False)
+        if len(bad) == 0 and len(good) > 0:
+            wins.append(
+                f"**100% SL attainment** — all {len(good)} LOBs with SL data "
+                f"at or above the 80% threshold."
+            )
+        elif len(good) > 0:
+            wins.append(
+                f"**{len(good)} of {len(sl)} LOBs** at or above the 80% "
+                f"service-level threshold."
+            )
+        for _, r in bad.head(3).iterrows():
+            risks.append(
+                f"**{r['LOB']}** service level at **{r['SL%']:.1f}%** "
+                f"on {int(r['NCO']):,} offered calls."
+            )
+
+    # ── AHT vs target ─────────────────────────────────────────────────────────
+    if "AHT Var%" in lobs.columns and lobs["AHT Var%"].notna().any():
+        ahtv = lobs[lobs["AHT Var%"].notna()]
+        under = ahtv[ahtv["AHT Var%"] <= 0]
+        if len(under) > 0:
+            best = under.sort_values("AHT Var%").iloc[0]
+            wins.append(
+                f"**{len(under)} LOBs at or under AHT target**, led by "
+                f"{best['LOB']} ({best['AHT Var%']:+.1f}% vs target)."
+            )
+        over = ahtv[ahtv["AHT Var%"] > 5].sort_values("NCO", ascending=False)
+        for _, r in over.head(3).iterrows():
+            risks.append(
+                f"**{r['LOB']}** AHT {int(round(r['AHT']))}s vs "
+                f"{int(round(r['Target AHT']))}s target "
+                f"(**{r['AHT Var%']:+.1f}%**)."
+            )
+
+    # ── Abandonment ───────────────────────────────────────────────────────────
+    if gt is not None and pd.notna(gt.get("ABN%")) and pd.notna(gt.get("Target ABN%")):
+        if gt["ABN%"] <= gt["Target ABN%"]:
+            wins.append(
+                f"Overall abandonment **{gt['ABN%']:.1f}%**, inside the "
+                f"{gt['Target ABN%']:.1f}% average target."
+            )
+        else:
+            risks.append(
+                f"Overall abandonment **{gt['ABN%']:.1f}%** vs "
+                f"{gt['Target ABN%']:.1f}% average target."
+            )
+    _abn_cols_ok = lobs["ABN%"].notna() & lobs["Target ABN%"].notna()
+    _abn_bad = lobs[_abn_cols_ok & (lobs["ABN%"] > lobs["Target ABN%"] * 1.1)]
+    if not _abn_bad.empty:
+        w = (
+            _abn_bad.assign(_gap=_abn_bad["ABN%"] - _abn_bad["Target ABN%"])
+            .sort_values("_gap", ascending=False).iloc[0]
+        )
+        risks.append(
+            f"**{w['LOB']}** abandonment {w['ABN%']:.1f}% is "
+            f"**{w['_gap']:.1f}pp above target**."
+        )
+
+    # ── Forecast accuracy ─────────────────────────────────────────────────────
+    if (
+        gt is not None
+        and "Forecast Variance" in summary_df.columns
+        and pd.notna(gt.get("Forecast Variance"))
+    ):
+        fv = gt["Forecast Variance"]
+        if 90 <= fv <= 110:
+            wins.append(
+                f"Volume ran **{fv:.0f}% of forecast** — solid forecast accuracy."
+            )
+        elif fv > 110:
+            risks.append(
+                f"Volume at **{fv:.0f}% of forecast** — offered calls well "
+                f"above plan, pressuring capacity."
+            )
+        else:
+            outlook.append(
+                f"Volume at **{fv:.0f}% of forecast** — running under plan."
+            )
+
+    # ── Week-over-week movement (needs 2+ weeks in the breakdown) ────────────
+    if interval_df is not None and not interval_df.empty and interval_df["Interval"].nunique() >= 2:
+        tmp = interval_df.copy()
+        tmp["_w"] = tmp["NCH"].fillna(0) * tmp["AHT"].fillna(0)
+        wk = tmp.groupby("Interval", sort=True).agg(
+            NCO=("NCO", "sum"), NCH=("NCH", "sum"),
+            ABN=("ABN", "sum"), _w=("_w", "sum"),
+        )
+        wk["AHT"] = wk["_w"] / wk["NCH"].replace(0, float("nan"))
+        wk["ABN%"] = wk["ABN"] / wk["NCO"].replace(0, float("nan")) * 100
+        last, prev = wk.iloc[-1], wk.iloc[-2]
+        _d_aht = last["AHT"] - prev["AHT"]
+        _d_abn = last["ABN%"] - prev["ABN%"]
+        if pd.notna(_d_aht) and _d_aht <= -5:
+            wins.append(f"AHT improved **{abs(_d_aht):.0f}s week-over-week** in the latest week.")
+        elif pd.notna(_d_aht) and _d_aht >= 5:
+            risks.append(f"AHT up **{_d_aht:.0f}s week-over-week** in the latest week.")
+        if pd.notna(_d_abn) and _d_abn <= -0.5:
+            wins.append(f"Abandon rate down **{abs(_d_abn):.1f}pp** vs prior week.")
+        elif pd.notna(_d_abn) and _d_abn >= 0.5:
+            risks.append(f"Abandon rate up **{_d_abn:.1f}pp** vs prior week.")
+        if prev["NCO"] > 0:
+            _d_nco = (last["NCO"] - prev["NCO"]) / prev["NCO"] * 100
+            outlook.append(
+                f"Latest week volume **{int(last['NCO']):,} offered** "
+                f"({_d_nco:+.0f}% vs prior week)."
+            )
+
+    # ── Coverage totals ───────────────────────────────────────────────────────
+    if gt is not None:
+        _sl_txt = f", SL **{gt['SL%']:.1f}%**" if pd.notna(gt.get("SL%")) else ""
+        outlook.append(
+            f"Period total: **{int(gt['NCO']):,} offered / "
+            f"{int(gt['NCH']):,} handled**{_sl_txt}."
+        )
+
+    def _bullets(items, empty_msg):
+        items = items or [empty_msg]
+        return "\n".join(f"- {i}" for i in items)
+
+    return (
+        "#### 🔑 Key Wins\n"
+        + _bullets(wins[:4], "No target-beating highlights this period.")
+        + "\n\n#### ⚠️ Primary Risks & Pressure Points\n"
+        + _bullets(risks[:5], "No LOB is materially off target — clean period.")
+        + "\n\n#### 🔭 Outlook\n"
+        + _bullets(outlook[:3], "Load more than one week of data for trend outlook.")
+    )
+
+
 def _summary_to_tsv(df: pd.DataFrame) -> str:
     """Tab-separated + formatted — plain-text fallback for clipboard."""
     display_cols = [
@@ -1335,7 +1478,7 @@ def _display_summary(df: pd.DataFrame, table_key: str = "main"):
         "LOB", "NCO", "NCH", "SL%", "Forecast Volume", "Forecast Variance",
         "Target AHT", "AHT", "AHT Var%",
         "ABN", "Target ABN%", "ABN%",
-        "Target ASA", "ASA", "Analysis",
+        "Target ASA", "ASA",
     ]
     # Sort LOBs by NCO descending; Grand Total always last
     gt   = df[df["LOB"] == "Grand Total"]
@@ -1615,7 +1758,7 @@ def _summary_dialog(df: pd.DataFrame, table_key: str):
     df = _merge_editor_edits(df, table_key)
 
     display_cols = ["LOB", "NCO", "NCH", "SL%", "Forecast Volume", "Forecast Variance", "Target AHT", "AHT", "AHT Var%",
-                    "ABN", "Target ABN%", "ABN%", "Target ASA", "ASA", "Analysis"]
+                    "ABN", "Target ABN%", "ABN%", "Target ASA", "ASA"]
     present = [c for c in display_cols if c in df.columns]
 
     HDR_BG    = "#1a3a5c"
@@ -2537,48 +2680,52 @@ with tab1:
             (summary_df["LOB"] == "Grand Total") | (~summary_df["LOB"].isin(_HIDDEN_LOBS))
         ].reset_index(drop=True)
 
-        hdr_col, copy_col, btn_col = st.columns([7, 2, 1])
-        with hdr_col:
-            st.subheader("Performance by Line of Business")
-        with copy_col:
-            st.markdown("<div style='padding-top:6px'></div>", unsafe_allow_html=True)
-            _copy_email_button(
-                _main_df, "main",
-                show_greeting=True,
-                lob_col_label="LOB",
-                table_key="main",
-            )
-        with btn_col:
-            st.markdown("<div style='padding-top:8px'></div>", unsafe_allow_html=True)
-            if st.button("⛶", key="fs_main", help="Expand table to full screen", use_container_width=True):
-                _summary_dialog(_main_df, "main")
+        # Table on the left, auto-written executive analysis on the right
+        _tbl_col, _an_col = st.columns([7, 3], gap="medium")
+        with _tbl_col:
+            hdr_col, copy_col, btn_col = st.columns([7, 2, 1])
+            with hdr_col:
+                st.subheader("Performance by Line of Business")
+            with copy_col:
+                st.markdown("<div style='padding-top:6px'></div>", unsafe_allow_html=True)
+                _copy_email_button(
+                    _main_df, "main",
+                    show_greeting=True,
+                    lob_col_label="LOB",
+                    table_key="main",
+                )
+            with btn_col:
+                st.markdown("<div style='padding-top:8px'></div>", unsafe_allow_html=True)
+                if st.button("⛶", key="fs_main", help="Expand table to full screen", use_container_width=True):
+                    _summary_dialog(_main_df, "main")
 
-        if _fc_not_past is not None:
+            if _fc_not_past is not None:
+                st.caption(
+                    f"ℹ️ **Forecast Volume / Forecast Variance appear once the day closes** — "
+                    f"the loaded data is for {_fc_not_past}, which isn't a past date yet. "
+                    f"Past-dated reports show both columns automatically."
+                )
+            _display_summary(_main_df, table_key="main")
+
+            st.markdown(
+                """
+                <div style='font-size:0.8em; margin-top:6px; display:flex; gap:12px; flex-wrap:wrap'>
+                <span style='background:#C8F0C8; padding:2px 10px; border-radius:12px;
+                             color:#1a5e1a; font-weight:600'>■ At / below target</span>
+                <span style='background:#FFF4CC; padding:2px 10px; border-radius:12px;
+                             color:#7a5c00; font-weight:600'>■ Within 10% of target</span>
+                <span style='background:#FFD0D0; padding:2px 10px; border-radius:12px;
+                             color:#8b0000; font-weight:600'>■ Exceeds target</span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
             st.caption(
-                f"ℹ️ **Forecast Volume / Forecast Variance appear once the day closes** — "
-                f"the loaded data is for {_fc_not_past}, which isn't a past date yet. "
-                f"Past-dated reports show both columns automatically."
+                "**AHT** = Avg Handle Time (s) · **ABN%** = Abandon Rate · "
+                "**ASA** = Avg Speed to Answer (s) · **Var%** = % variance vs target"
             )
-        _display_summary(_main_df, table_key="main")
-
-        st.markdown(
-            """
-            <div style='font-size:0.8em; margin-top:6px; display:flex; gap:12px; flex-wrap:wrap'>
-            <span style='background:#C8F0C8; padding:2px 10px; border-radius:12px;
-                         color:#1a5e1a; font-weight:600'>■ At / below target</span>
-            <span style='background:#FFF4CC; padding:2px 10px; border-radius:12px;
-                         color:#7a5c00; font-weight:600'>■ Within 10% of target</span>
-            <span style='background:#FFD0D0; padding:2px 10px; border-radius:12px;
-                         color:#8b0000; font-weight:600'>■ Exceeds target</span>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        st.caption(
-            "**AHT** = Avg Handle Time (s) · **ABN%** = Abandon Rate · "
-            "**ASA** = Avg Speed to Answer (s) · **Var%** = % variance vs target · "
-            "**Analysis** = auto-generated driver for LOBs above ABN% target"
-        )
+        with _an_col:
+            st.markdown(_wbr_narrative(_main_df, interval_df))
         st.markdown("---")
 
         # ── Abandon Rate Analysis ──────────────────────────────────────────────
