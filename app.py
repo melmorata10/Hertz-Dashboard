@@ -488,14 +488,15 @@ div[data-testid="metric-container"] [data-testid="stMetricDelta"] { font-size: 1
 }
 
 /* ══ Expander ════════════════════════════════════════════════════════════ */
+/* Header background matches the flat gray of the selectbox/input widgets */
 details { border: 1px solid rgba(200,215,235,0.8) !important; border-radius: 12px !important; overflow: hidden; transition: all 0.2s ease; }
 details[open] summary { border-bottom: 1px solid rgba(200,215,235,0.7); }
 summary {
-    background: linear-gradient(90deg, #edf3fb 0%, #f5f9fd 100%) !important;
+    background: #f0f2f6 !important;
     font-weight: 700 !important; color: #1a3a5c !important;
     padding: 14px 18px !important; border-radius: 12px !important; letter-spacing: 0.1px !important;
 }
-summary:hover { background: linear-gradient(90deg, #e1edf8 0%, #eaf3fc 100%) !important; }
+summary:hover { background: #e6e9ef !important; }
 
 /* ══ Dividers ════════════════════════════════════════════════════════════ */
 hr {
@@ -2828,6 +2829,8 @@ with tab1:
             (summary_df["LOB"] == "Grand Total") | (~summary_df["LOB"].isin(_HIDDEN_LOBS))
         ].reset_index(drop=True)
 
+        _wk_pick = st.session_state.get("wbr_week_select", _WBR_ALL_WEEKS)
+
         # Table on the left, auto-written executive analysis on the right
         _tbl_col, _an_col = st.columns([7, 3], gap="medium")
         with _tbl_col:
@@ -2873,7 +2876,6 @@ with tab1:
                 "**ASA** = Avg Speed to Answer (s) · **Var%** = % variance vs target"
             )
         with _an_col:
-            _wk_pick = st.session_state.get("wbr_week_select", _WBR_ALL_WEEKS)
             _nar_iv = (
                 interval_df[~interval_df["LOB"].isin(_vps_excluded)]
                 if _vps_excluded else interval_df
@@ -2908,24 +2910,37 @@ with tab1:
                     mask = (vdf["LOB"] == "Grand Total") | (vdf["NCO"].fillna(0) > 0)
                     vdf = vdf[mask].reset_index(drop=True)
 
-                v_hdr, v_copy, v_btn = st.columns([7, 2, 1])
-                with v_hdr:
-                    st.markdown(f"#### {vendor}")
-                with v_copy:
-                    st.markdown("<div style='padding-top:4px'></div>", unsafe_allow_html=True)
-                    _copy_email_button(
-                        vdf, f"vendor_{vendor}",
-                        show_greeting=False,
-                        lob_col_label=vendor,
-                        table_key=f"vendor_{vendor}",
-                    )
-                with v_btn:
-                    st.markdown("<div style='padding-top:6px'></div>", unsafe_allow_html=True)
-                    if st.button("⛶", key=f"fs_vendor_{vendor}", help="Expand table to full screen", use_container_width=True):
-                        _summary_dialog(vdf, f"vendor_{vendor}")
+                # Vendor table on the left, its own auto-written analysis right
+                _v_tbl_col, _v_an_col = st.columns([7, 3], gap="medium")
+                with _v_tbl_col:
+                    v_hdr, v_copy, v_btn = st.columns([7, 2, 1])
+                    with v_hdr:
+                        st.markdown(f"#### {vendor}")
+                    with v_copy:
+                        st.markdown("<div style='padding-top:4px'></div>", unsafe_allow_html=True)
+                        _copy_email_button(
+                            vdf, f"vendor_{vendor}",
+                            show_greeting=False,
+                            lob_col_label=vendor,
+                            table_key=f"vendor_{vendor}",
+                        )
+                    with v_btn:
+                        st.markdown("<div style='padding-top:6px'></div>", unsafe_allow_html=True)
+                        if st.button("⛶", key=f"fs_vendor_{vendor}", help="Expand table to full screen", use_container_width=True):
+                            _summary_dialog(vdf, f"vendor_{vendor}")
 
-                _display_summary(vdf, table_key=f"vendor_{vendor}")
-                _display_abn_analysis(vdf, interval_df=interval_df, vendor=vendor)
+                    _display_summary(vdf, table_key=f"vendor_{vendor}")
+                    _display_abn_analysis(vdf, interval_df=interval_df, vendor=vendor)
+                with _v_an_col:
+                    _v_iv = interval_df[interval_df["Vendor"] == vendor]
+                    if _vps_excluded:
+                        _v_iv = _v_iv[~_v_iv["LOB"].isin(_vps_excluded)]
+                    st.markdown(f"##### {vendor} — Analysis")
+                    st.markdown(_wbr_narrative(
+                        vdf, _v_iv,
+                        focus_week=None if _wk_pick == _WBR_ALL_WEEKS else _wk_pick,
+                    ))
+                st.markdown("---")
 
 # ── Tab 2: Weekly Breakdown ───────────────────────────────────────────────────
 with tab2:
