@@ -2114,6 +2114,64 @@ def _chart_data(filtered: pd.DataFrame) -> pd.DataFrame:
     return agg
 
 
+def _vendor_comparison(iv_df: pd.DataFrame) -> pd.DataFrame:
+    """One row per vendor: TOTAL performance across the given interval rows
+    (all selected weeks combined, not week-by-week), plus an All-Vendors row.
+    Rates are volume-weighted, SL% reconstructed from SL% x NCO."""
+    if iv_df is None or iv_df.empty:
+        return pd.DataFrame()
+    t = iv_df.copy()
+    t["_ahtw"]  = t["NCH"].fillna(0) * t["AHT"].fillna(0)
+    t["_asaw"]  = t["NCH"].fillna(0) * t["ASA"].fillna(0)
+    t["_slc"]   = t["SL%"] * t["NCO"] / 100.0
+    t["_slnco"] = t["NCO"].where(t["SL%"].notna())
+    g = t.groupby("Vendor", dropna=False).agg(
+        NCO=("NCO", "sum"), NCH=("NCH", "sum"), ABN=("ABN", "sum"),
+        _ahtw=("_ahtw", "sum"), _asaw=("_asaw", "sum"),
+        _slc=("_slc", "sum"), _slnco=("_slnco", "sum"),
+    ).reset_index().sort_values("NCO", ascending=False)
+    # All-Vendors total row
+    _tot = g[["NCO", "NCH", "ABN", "_ahtw", "_asaw", "_slc", "_slnco"]].sum()
+    _tot["Vendor"] = "All Vendors"
+    g = pd.concat([g, pd.DataFrame([_tot])], ignore_index=True)
+    _nch = g["NCH"].replace(0, float("nan"))
+    _nco = g["NCO"].replace(0, float("nan"))
+    g["AHT"]  = (g["_ahtw"] / _nch).round(1)
+    g["ASA"]  = (g["_asaw"] / _nch).round(1)
+    g["ABN%"] = (g["ABN"] / _nco * 100).round(1)
+    g["SL%"]  = (g["_slc"] / g["_slnco"].replace(0, float("nan")) * 100).round(1)
+    return g[["Vendor", "NCO", "NCH", "SL%", "AHT", "ASA", "ABN%"]]
+
+
+def _display_vendor_comparison(iv_df: pd.DataFrame) -> None:
+    """Render the vendor comparison table with SL% colour coding."""
+    comp = _vendor_comparison(iv_df)
+    if comp.empty:
+        st.caption("No data for the current selection.")
+        return
+
+    def _sl_color(v):
+        if pd.isna(v):
+            return ""
+        return ("background-color: #C8F0C8; color: #1a5e1a" if v >= 80
+                else "background-color: #FFD0D0; color: #8b0000")
+
+    _last = comp.index[-1]
+    sty = (
+        comp.style
+        .format({
+            "NCO": _fmt_int, "NCH": _fmt_int,
+            "SL%": _fmt_pct, "ABN%": _fmt_pct,
+            "AHT": _fmt_seconds_int, "ASA": _fmt_seconds,
+        }, na_rep="—")
+        .map(_sl_color, subset=["SL%"])
+        .apply(lambda col: [
+            "font-weight: bold" if i == _last else "" for i in col.index
+        ], axis=0)
+    )
+    st.dataframe(sty, hide_index=True, use_container_width=True)
+
+
 def _display_interval(df: pd.DataFrame, lob_filter: list, vendor_filter: list):
     # Checkbox semantics: the selections ARE the filter — an empty selection
     # means nothing is shown (unlike the old multiselect, where empty meant
@@ -2953,6 +3011,27 @@ with tab2:
             v for v in interval_df["Vendor"].unique()
             if v not in ("Unknown", "", None)
         )
+        all_weeks = sorted(interval_df["Interval"].dropna().unique())
+
+        # ── Week selector ──────────────────────────────────────────────────────
+        def _wk_multi_label(w: str) -> str:
+            try:
+                _ws = pd.Timestamp(w); _we = _ws + pd.Timedelta(days=6)
+                return f"Week of {_ws.strftime('%b %d')} – {_we.strftime('%b %d')}"
+            except Exception:
+                return str(w)
+
+        week_sel = st.multiselect(
+            "📆 Weeks to present",
+            options=all_weeks,
+            default=all_weeks,
+            format_func=_wk_multi_label,
+            key="wk_week_select",
+            help="Choose which coverage weeks appear in the breakdown and the "
+                 "vendor summary. Leave empty to include all weeks.",
+        )
+        if not week_sel:
+            week_sel = all_weeks
 
         # ── Checkbox filters (replaces the old multiselect pill chips) ─────────
         _flt_lob_col, _flt_vendor_col = st.columns([3, 2])
@@ -2980,18 +3059,42 @@ with tab2:
                         vendor_sel.append(_v)
             st.caption(f"Showing **{len(vendor_sel)} of {len(all_vendors)}** vendors")
 
+        # Everything below respects the week selection.
+        _iv_weeks = interval_df[interval_df["Interval"].isin(week_sel)]
+
+        # ── Selected-LOB title ─────────────────────────────────────────────────
+        if not lob_sel:
+            _lob_title = "None selected"
+        elif len(lob_sel) == len(all_lobs):
+            _lob_title = "All LOBs"
+        else:
+            _lob_title = ", ".join(lob_sel)
+        _wk_title = (
+            "all weeks" if len(week_sel) == len(all_weeks)
+            else f"{len(week_sel)} of {len(all_weeks)} weeks"
+        )
+        st.markdown(f"#### 📋 Selected LOBs: {_lob_title}")
+        st.caption(f"Covering {_wk_title}.")
+
+        # ── Vendor comparison (total performance, not weekly) ──────────────────
+        st.markdown("##### 🏢 Vendor Performance Summary")
+        st.caption("Total across the selected weeks and LOBs — one row per vendor.")
+        _iv_filtered = _iv_weeks[
+            _iv_weeks["LOB"].isin(lob_sel) & _iv_weeks["Vendor"].isin(vendor_sel)
+        ].copy()
+        _display_vendor_comparison(_iv_filtered)
+
+        st.markdown("---")
+
+        # ── Weekly breakdown table ─────────────────────────────────────────────
         iv_hdr, iv_btn = st.columns([9, 1])
         with iv_hdr:
             st.subheader("Weekly Breakdown")
         with iv_btn:
             st.markdown("<div style='padding-top:8px'></div>", unsafe_allow_html=True)
-            _iv_filtered = interval_df[
-                interval_df["LOB"].isin(lob_sel)
-                & interval_df["Vendor"].isin(vendor_sel)
-            ].copy()
             if st.button("⛶", key="fs_interval", help="Expand table to full screen", use_container_width=True):
                 _interval_dialog(_iv_filtered)
-        _display_interval(interval_df, lob_sel, vendor_sel)
+        _display_interval(_iv_weeks, lob_sel, vendor_sel)
     elif data_ok:
         st.info("No weekly data available in the loaded files.")
 
