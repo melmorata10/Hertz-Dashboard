@@ -112,7 +112,10 @@ def _derive_metrics(
     df["AHT"]  = (df["AHT_w"] / safe_nch).round(1)
     df["ASA"]  = (df["ASA_w"] / safe_nch).round(1)
     df["ABN%"] = (df["ABN"]   / safe_nco * 100).round(2)
-    df["SL%"]  = (df["SLC"]   / safe_nco * 100).round(1)
+    # SL% can exceed 100% when SL-qualifying calls outnumber offered (e.g.
+    # calls answered within threshold that carried over an interval boundary);
+    # cap it at 100% so it never reads above a full service level.
+    df["SL%"]  = (df["SLC"]   / safe_nco * 100).clip(upper=100).round(1)
 
     _targets = custom_targets if custom_targets is not None else TARGETS
 
@@ -228,7 +231,7 @@ def prepare(
             "LOB":         "Grand Total",
             "NCO":         nco,
             "NCH":         nch,
-            "SL%":         round(slc / nco * 100, 1) if nco > 0 and pd.notna(slc) else float("nan"),
+            "SL%":         round(min(slc / nco * 100, 100.0), 1) if nco > 0 and pd.notna(slc) else float("nan"),
             "AHT":         gt_aht,
             "Target AHT":  gt_target_aht,
             "AHT Var%":    gt_aht_var,
