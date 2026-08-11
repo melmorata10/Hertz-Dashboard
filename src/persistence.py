@@ -246,3 +246,64 @@ def load_targets_mtime() -> float:
         return _TARGETS_FILE.stat().st_mtime
     except Exception:
         return 0.0
+
+
+# ── Full-state backup / restore ────────────────────────────────────────────────
+# Every piece of persisted state EXCEPT the raw daily CSVs (which live only in
+# per-session memory and are never written to disk).  Lets an operator snapshot
+# all shared configuration before a deploy and restore it afterward, so a
+# container rebuild on Streamlit Cloud can never lose mapping/targets/comments/
+# rules/forecast.
+
+BACKUP_VERSION = 1
+
+_BACKUP_FILES = {
+    "lob_comments":    _COMMENTS_FILE,
+    "custom_mapping":  _MAPPING_FILE,
+    "mapping_df":      _MAPPING_DF_FILE,
+    "custom_targets":  _TARGETS_FILE,
+    "daily_forecast":  _FORECAST_FILE,
+    "exception_rules": _RULES_FILE,
+}
+
+
+def export_all() -> dict:
+    """Bundle all persisted state into one JSON-serialisable dict.
+
+    Keys with no saved file are recorded as None.  Raw CSV data is never
+    included — it is not persisted to disk in the first place.
+    """
+    bundle: dict = {"_backup_version": BACKUP_VERSION}
+    with _LOCK:
+        for key, f in _BACKUP_FILES.items():
+            try:
+                bundle[key] = json.loads(f.read_text(encoding="utf-8"))
+            except Exception:
+                bundle[key] = None
+    return bundle
+
+
+def import_all(bundle: dict) -> list[str]:
+    """Restore persisted state from a dict produced by :func:`export_all`.
+
+    Only keys that are present and non-null are written, so a partial backup
+    never clobbers state it does not mention.  Returns the list of restored
+    keys.  Raises ``ValueError`` if the payload is not a recognised backup.
+    """
+    if not isinstance(bundle, dict):
+        raise ValueError("Backup must be a JSON object.")
+    if not (set(bundle) & set(_BACKUP_FILES)):
+        raise ValueError("File does not look like a dashboard backup.")
+
+    _ensure_dir()
+    restored: list[str] = []
+    with _LOCK:
+        for key, f in _BACKUP_FILES.items():
+            if key not in bundle or bundle[key] is None:
+                continue
+            f.write_text(
+                json.dumps(bundle[key], ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            restored.append(key)
+    return restored

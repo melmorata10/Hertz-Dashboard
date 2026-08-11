@@ -45,6 +45,7 @@ from src.persistence import (
     load_daily_forecast, save_daily_forecast,
     clear_daily_forecast, load_daily_forecast_mtime,
     load_exception_rules, save_exception_rules, load_exception_rules_mtime,
+    export_all as _export_all, import_all as _import_all,
 )
 
 # SharePoint connector
@@ -2321,6 +2322,76 @@ if data_ok and _fc_data is not None and call_date:
                 )
         else:
             _fc_not_past = _fc_report_date.strftime("%b %d, %Y")
+
+# ── Sidebar — Backup & Restore (always available) ─────────────────────────────
+# Snapshots every persisted config (mapping, targets, comments, rules,
+# forecast) into one file — raw CSVs are session-only and never included.
+# Lets an operator preserve shared state across a Streamlit Cloud rebuild.
+with st.sidebar:
+    st.markdown("---")
+    with st.expander("🗄️ Backup & Restore", expanded=False):
+        import json as _bk_json
+
+        _bk_bundle = _export_all()
+        _bk_saved = [
+            _k for _k in (
+                "custom_mapping", "mapping_df", "custom_targets",
+                "lob_comments", "exception_rules", "daily_forecast",
+            ) if _bk_bundle.get(_k) is not None
+        ]
+        st.caption(
+            "Saves mapping, targets, comments, exception rules and the Daily "
+            "Forecast. Raw daily CSVs are **not** included."
+        )
+        if _bk_saved:
+            st.caption("Currently saved: " + ", ".join(
+                {
+                    "custom_mapping": "mapping",
+                    "mapping_df": "mapping table",
+                    "custom_targets": "targets",
+                    "lob_comments": "comments",
+                    "exception_rules": "rules",
+                    "daily_forecast": "forecast",
+                }[_k] for _k in _bk_saved
+            ))
+        else:
+            st.caption("_Nothing saved yet — using built-in defaults._")
+
+        st.download_button(
+            "⬇️ Download backup",
+            data=_bk_json.dumps(_bk_bundle, ensure_ascii=False, indent=2).encode("utf-8"),
+            file_name=f"hertz_dashboard_backup_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
+            mime="application/json",
+            use_container_width=True,
+            help="Download all shared config before a deploy or rebuild.",
+        )
+
+        _bk_up = st.file_uploader(
+            "Restore from backup",
+            type=["json"],
+            key="backup_restore_uploader",
+            help="Upload a backup file to overwrite the shared config.",
+        )
+        if _bk_up is not None:
+            _bk_sig = (_bk_up.name, _bk_up.size)
+            if st.session_state.get("_backup_restore_sig") != _bk_sig:
+                try:
+                    _bk_payload = _bk_json.loads(_bk_up.getvalue().decode("utf-8"))
+                    _bk_restored = _import_all(_bk_payload)
+                    st.session_state["_backup_restore_sig"] = _bk_sig
+                    # Force every live-sync block to reload from the freshly
+                    # written files on the next run.
+                    st.session_state.pop("lob_comments", None)
+                    st.session_state["_mapping_mtime"] = -1.0
+                    st.session_state["_rules_mtime"] = -1.0
+                    st.session_state["_targets_mtime"] = -1.0
+                    st.session_state["daily_forecast_mtime"] = -1.0
+                    st.success(
+                        f"✅ Restored {len(_bk_restored)} item(s). Reloading…"
+                    )
+                    st.rerun()
+                except Exception as _bk_exc:
+                    st.error(f"Could not restore: {_bk_exc}")
 
 # ── Sidebar — export buttons & notes (only when data is ready) ───────────────
 if data_ok and not summary_df.empty:
