@@ -224,9 +224,19 @@ def prepare(
         abn = int(sub["ABN"].sum())
         slc = sub["SLCalls"].sum(min_count=1)
         gt_aht        = round(sub["AHT_w"].sum() / nch, 1) if nch > 0 else 0
-        gt_target_aht = round(agg["Target AHT"].mean(), 1)
+        # Volume-weighted by NCH so the Total target lines up with the
+        # call-weighted actual AHT (falls back to a plain mean if NCH is 0).
+        gt_target_aht = (
+            round((agg["Target AHT"] * agg["NCH"]).sum() / nch, 1)
+            if nch > 0 else round(agg["Target AHT"].mean(), 1)
+        )
         gt_aht_var    = round((gt_aht - gt_target_aht) / gt_target_aht * 100, 1) if gt_target_aht else None
-        gt_target_abn = round(agg["Target ABN%"].mean(), 2)
+        # Volume-weighted by NCO so the Total target lines up with the
+        # call-weighted actual ABN% (falls back to a plain mean if NCO is 0).
+        gt_target_abn = (
+            round((agg["Target ABN%"] * agg["NCO"]).sum() / nco, 2)
+            if nco > 0 else round(agg["Target ABN%"].mean(), 2)
+        )
         gt = pd.DataFrame([{
             "LOB":         "Grand Total",
             "NCO":         nco,
