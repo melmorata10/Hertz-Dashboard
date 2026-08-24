@@ -130,6 +130,203 @@ def _derive_metrics(
     return df.drop(columns=["AHT_w", "ASA_w", "SLC"])
 
 
+# Columns of an empty summary table (returned when there's nothing to show).
+_EMPTY_SUMMARY_COLS = [
+    "LOB", "NCO", "NCH", "SL%", "Target AHT", "AHT", "AHT Var%",
+    "ABN", "Target ABN%", "ABN%", "Target ASA", "ASA",
+]
+
+
+def _summaries_from_enriched(
+    df: pd.DataFrame,
+    custom_targets: dict = None,
+    interval_col: str = "Interval30",
+) -> tuple[pd.DataFrame, dict, pd.DataFrame]:
+    """Build (summary, vendor_summaries, interval) from an enriched frame.
+
+    ``df`` must already carry LOB / Vendor plus the additive columns
+    (NCO, NCH, ABN, SLCalls, AHT_w, ASA_w) and an interval column named
+    ``interval_col`` — either a 30-min datetime (``prepare``) or an already
+    formatted "HH:MM" string (the streaming path). Because every input column
+    is a plain sum, feeding pre-aggregated rows yields the same result as
+    feeding raw rows.
+    """
+    # ── Helper: build summary with grand total for any subset of rows ──────────
+    def _make_summary(sub: pd.DataFrame) -> pd.DataFrame:
+        agg = _derive_metrics(
+            _aggregate(sub, ["LOB"]),
+            custom_targets=custom_targets,
+        )
+        order = {lob: i for i, lob in enumerate(LOB_DISPLAY_ORDER)}
+        agg["_sort"] = agg["LOB"].map(lambda l: order.get(l, 999))
+        agg = agg.sort_values("_sort").drop(columns=["_sort"]).reset_index(drop=True)
+        nco = int(sub["NCO"].sum())
+        nch = int(sub["NCH"].sum())
+        abn = int(sub["ABN"].sum())
+        slc = sub["SLCalls"].sum(min_count=1)
+        gt_aht        = round(sub["AHT_w"].sum() / nch, 1) if nch > 0 else 0
+        # Volume-weighted by NCH so the Total target lines up with the
+        # call-weighted actual AHT (falls back to a plain mean if NCH is 0).
+        gt_target_aht = (
+            round((agg["Target AHT"] * agg["NCH"]).sum() / nch, 1)
+            if nch > 0 else round(agg["Target AHT"].mean(), 1)
+        )
+        gt_aht_var    = round((gt_aht - gt_target_aht) / gt_target_aht * 100, 1) if gt_target_aht else None
+        # Volume-weighted by NCO so the Total target lines up with the
+        # call-weighted actual ABN% (falls back to a plain mean if NCO is 0).
+        gt_target_abn = (
+            round((agg["Target ABN%"] * agg["NCO"]).sum() / nco, 2)
+            if nco > 0 else round(agg["Target ABN%"].mean(), 2)
+        )
+        gt = pd.DataFrame([{
+            "LOB":         "Grand Total",
+            "NCO":         nco,
+            "NCH":         nch,
+            "SL%":         round(min(slc / nco * 100, 100.0), 1) if nco > 0 and pd.notna(slc) else float("nan"),
+            "AHT":         gt_aht,
+            "Target AHT":  gt_target_aht,
+            "AHT Var%":    gt_aht_var,
+            "ABN":         abn,
+            "Target ABN%": gt_target_abn,
+            "ABN%":        round(abn / nco * 100, 2) if nco > 0 else 0,
+            "Target ASA":  round(agg["Target ASA"].mean(), 1),
+            "ASA":         round(sub["ASA_w"].sum() / nch, 1) if nch > 0 else 0,
+        }])
+        return pd.concat([agg, gt], ignore_index=True)
+
+    # ── Summary (all vendors combined) ────────────────────────────────────────
+    summary = _make_summary(df)
+
+    # ── Per-vendor summaries ──────────────────────────────────────────────────
+    vendor_summaries: dict[str, pd.DataFrame] = {}
+    for vendor in sorted(df["Vendor"].dropna().unique()):
+        sub = df[df["Vendor"] == vendor]
+        if not sub.empty:
+            vendor_summaries[vendor] = _make_summary(sub)
+
+    # ── Interval (by LOB + Vendor + 30-min slot) ──────────────────────────────
+    interval = _derive_metrics(
+        _aggregate(df, ["LOB", "Vendor", interval_col]),
+        custom_targets=custom_targets,
+    )
+    if pd.api.types.is_datetime64_any_dtype(interval[interval_col]):
+        interval[interval_col] = interval[interval_col].dt.strftime("%H:%M")
+    interval[interval_col] = interval[interval_col].fillna("N/A").astype(str)
+    if interval_col != "Interval":
+        interval = interval.rename(columns={interval_col: "Interval"})
+    interval = interval.sort_values(["Interval", "LOB", "Vendor"]).reset_index(drop=True)
+
+    return summary, vendor_summaries, interval
+
+
+# ── Streaming aggregation ────────────────────────────────────────────────────
+# A YTD load (many files / millions of interval rows) would OOM the shared app
+# if every raw row were held in memory at once. Instead each file is read in
+# chunks, each chunk is reduced to compact per-(skill, vendor, 30-min slot)
+# sums, and only that small table is kept. Skill/Supplier identity is preserved
+# so the skill→LOB mapping can still be edited afterwards without re-reading.
+_AGG_COLS = [
+    "SkillName", "SupplierName", "Interval",
+    "NCO", "NCH", "AHT_w", "ASA_w", "ABN", "SLCalls",
+]
+
+
+def _empty_agg() -> pd.DataFrame:
+    return pd.DataFrame(columns=_AGG_COLS)
+
+
+def _regroup(df: pd.DataFrame) -> pd.DataFrame:
+    """Sum the additive columns by (SkillName, SupplierName, Interval)."""
+    return df.groupby(
+        ["SkillName", "SupplierName", "Interval"], dropna=False
+    ).agg(
+        NCO   =("NCO",   "sum"),
+        NCH   =("NCH",   "sum"),
+        AHT_w =("AHT_w", "sum"),
+        ASA_w =("ASA_w", "sum"),
+        ABN   =("ABN",   "sum"),
+        SLCalls=("SLCalls", lambda s: s.sum(min_count=1)),
+    ).reset_index()
+
+
+def aggregate_chunk(raw_chunk: pd.DataFrame) -> pd.DataFrame:
+    """Reduce a chunk of raw rows to compact per-(skill, vendor, slot) sums.
+
+    Mirrors prepare()'s normalise → coerce → 30-min bucket → weighted-column
+    steps, then groups to additive sums. Enrichment (skill→LOB) is deliberately
+    NOT applied here so it can be redone in :func:`finalize` whenever the
+    mapping changes.
+    """
+    if raw_chunk is None or raw_chunk.empty:
+        return _empty_agg()
+    df = _normalise_columns(raw_chunk)
+
+    for col in ("NCO", "NCH", "AHT", "ASA"):
+        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0) if col in df.columns else 0
+    if "SLCalls" in df.columns:
+        df["SLCalls"] = pd.to_numeric(df["SLCalls"], errors="coerce").fillna(0)
+    else:
+        df["SLCalls"] = float("nan")
+    if "ABN" in df.columns:
+        df["ABN"] = pd.to_numeric(df["ABN"], errors="coerce").fillna(0)
+    else:
+        df["ABN"] = (df["NCO"] - df["NCH"]).clip(lower=0)
+
+    if "Interval" in df.columns:
+        _slot = pd.to_datetime(df["Interval"], errors="coerce").dt.floor("30min")
+        df["Interval"] = _slot.dt.strftime("%H:%M")
+    else:
+        df["Interval"] = None
+
+    df["AHT_w"] = df["NCH"] * df["AHT"]
+    if "SpeedOfAnswer" in df.columns:
+        df["ASA_w"] = pd.to_numeric(df["SpeedOfAnswer"], errors="coerce").fillna(0)
+    else:
+        df["ASA_w"] = df["NCH"] * df["ASA"]
+
+    for c in ("SkillName", "SupplierName"):
+        df[c] = df[c].fillna("") if c in df.columns else ""
+    df["Interval"] = df["Interval"].fillna("N/A")
+
+    return _regroup(df[_AGG_COLS])
+
+
+def combine_aggregates(parts: list) -> pd.DataFrame:
+    """Fold a list of compact aggregates into one (re-summing shared keys)."""
+    parts = [p for p in parts if p is not None and not p.empty]
+    if not parts:
+        return _empty_agg()
+    if len(parts) == 1:
+        return parts[0].reset_index(drop=True)
+    return _regroup(pd.concat(parts, ignore_index=True))
+
+
+def finalize(
+    agg_df: pd.DataFrame,
+    custom_mapping: dict = None,
+    custom_targets: dict = None,
+    hidden_lobs: set = None,
+) -> tuple[pd.DataFrame, dict, pd.DataFrame]:
+    """Turn a compact aggregate (from :func:`aggregate_chunk`) into the same
+    (summary_df, vendor_summaries, interval_df) tuple ``prepare`` returns.
+
+    Enrichment and hidden-LOB filtering happen here, so editing the mapping,
+    targets, or exception rules re-derives the tables without touching the
+    source files.
+    """
+    if agg_df is None or agg_df.empty:
+        empty = pd.DataFrame(columns=_EMPTY_SUMMARY_COLS)
+        return empty, {}, empty
+    df = _enrich(agg_df.copy(), mapping=custom_mapping)
+    df = df[df["LOB"].notna() & (df["LOB"] != "") & (df["LOB"] != "Unknown")]
+    if hidden_lobs:
+        df = df[~df["LOB"].isin(hidden_lobs)]
+    if df.empty:
+        empty = pd.DataFrame(columns=_EMPTY_SUMMARY_COLS)
+        return empty, {}, empty
+    return _summaries_from_enriched(df, custom_targets, interval_col="Interval")
+
+
 def prepare(
     raw: pd.DataFrame,
     custom_mapping: dict = None,
@@ -210,68 +407,6 @@ def prepare(
     else:
         df["ASA_w"] = df["NCH"] * df["ASA"]
 
-    # ── Helper: build summary with grand total for any subset of rows ──────────
-    def _make_summary(sub: pd.DataFrame) -> pd.DataFrame:
-        agg = _derive_metrics(
-            _aggregate(sub, ["LOB"]),
-            custom_targets=custom_targets,
-        )
-        order = {lob: i for i, lob in enumerate(LOB_DISPLAY_ORDER)}
-        agg["_sort"] = agg["LOB"].map(lambda l: order.get(l, 999))
-        agg = agg.sort_values("_sort").drop(columns=["_sort"]).reset_index(drop=True)
-        nco = int(sub["NCO"].sum())
-        nch = int(sub["NCH"].sum())
-        abn = int(sub["ABN"].sum())
-        slc = sub["SLCalls"].sum(min_count=1)
-        gt_aht        = round(sub["AHT_w"].sum() / nch, 1) if nch > 0 else 0
-        # Volume-weighted by NCH so the Total target lines up with the
-        # call-weighted actual AHT (falls back to a plain mean if NCH is 0).
-        gt_target_aht = (
-            round((agg["Target AHT"] * agg["NCH"]).sum() / nch, 1)
-            if nch > 0 else round(agg["Target AHT"].mean(), 1)
-        )
-        gt_aht_var    = round((gt_aht - gt_target_aht) / gt_target_aht * 100, 1) if gt_target_aht else None
-        # Volume-weighted by NCO so the Total target lines up with the
-        # call-weighted actual ABN% (falls back to a plain mean if NCO is 0).
-        gt_target_abn = (
-            round((agg["Target ABN%"] * agg["NCO"]).sum() / nco, 2)
-            if nco > 0 else round(agg["Target ABN%"].mean(), 2)
-        )
-        gt = pd.DataFrame([{
-            "LOB":         "Grand Total",
-            "NCO":         nco,
-            "NCH":         nch,
-            "SL%":         round(min(slc / nco * 100, 100.0), 1) if nco > 0 and pd.notna(slc) else float("nan"),
-            "AHT":         gt_aht,
-            "Target AHT":  gt_target_aht,
-            "AHT Var%":    gt_aht_var,
-            "ABN":         abn,
-            "Target ABN%": gt_target_abn,
-            "ABN%":        round(abn / nco * 100, 2) if nco > 0 else 0,
-            "Target ASA":  round(agg["Target ASA"].mean(), 1),
-            "ASA":         round(sub["ASA_w"].sum() / nch, 1) if nch > 0 else 0,
-        }])
-        return pd.concat([agg, gt], ignore_index=True)
-
-    # ── Summary (all vendors combined) ────────────────────────────────────────
-    summary = _make_summary(df)
-
-    # ── Per-vendor summaries ──────────────────────────────────────────────────
-    vendor_summaries: dict[str, pd.DataFrame] = {}
-    for vendor in sorted(df["Vendor"].dropna().unique()):
-        sub = df[df["Vendor"] == vendor]
-        if not sub.empty:
-            vendor_summaries[vendor] = _make_summary(sub)
-
-    # ── Interval (by LOB + Vendor + 30-min slot) ──────────────────────────────
-    interval = _derive_metrics(
-        _aggregate(df, ["LOB", "Vendor", "Interval30"]),
-        custom_targets=custom_targets,
-    )
-    if pd.api.types.is_datetime64_any_dtype(interval["Interval30"]):
-        interval["Interval30"] = interval["Interval30"].dt.strftime("%H:%M")
-    interval["Interval30"] = interval["Interval30"].fillna("N/A").astype(str)
-    interval = interval.rename(columns={"Interval30": "Interval"})
-    interval = interval.sort_values(["Interval", "LOB", "Vendor"]).reset_index(drop=True)
-
-    return summary, vendor_summaries, interval
+    # 6. Reduce to the summary / vendor / interval tables (shared with the
+    #    streaming path, which feeds pre-aggregated rows through the same code).
+    return _summaries_from_enriched(df, custom_targets, interval_col="Interval30")

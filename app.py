@@ -30,7 +30,9 @@ from src.exception_rules import (
     apply_to_forecast_df as _rules_apply_to_forecast,
     build_forecast_lob_map as _rules_forecast_lob_map,
 )
-from src.data_processor import prepare
+from src.data_processor import (
+    prepare, aggregate_chunk, combine_aggregates, finalize,
+)
 from src.excel_export import (
     build_asa_report_workbook,
     default_filename as _asa_report_filename,
@@ -2061,11 +2063,12 @@ with st.sidebar:
     uploaded = None
     sp_load_clicked = False
 
-    # Combined-upload ceiling for this shared Streamlit Cloud app. The instance
-    # has ~1 GB RAM and a CSV parses to a DataFrame several× its text size, so a
-    # large multi-file load OOM-crashed the app for EVERY user. Rejecting an
-    # over-large batch up front keeps one big upload from taking the app down.
-    _MAX_UPLOAD_MB = 200
+    # Streaming ingest keeps only a compact aggregate in memory, but the file
+    # uploader still buffers the raw upload bytes, so a very large batch can
+    # still strain the shared instance. This ceiling is a safety valve; past it,
+    # a daily rollup (drop the 30-minute Interval column) is the way to go.
+    _MAX_UPLOAD_MB  = 500
+    _CSV_CHUNK_ROWS = 200_000   # rows read per chunk while streaming a file
 
     if data_source == "📁 Upload CSV":
         st.markdown("**Upload CSV files**")
@@ -2075,10 +2078,11 @@ with st.sidebar:
             accept_multiple_files=True,
             label_visibility="collapsed",
         )
-        # Parse uploads ONCE into a single, downcast DataFrame held in session
-        # state. We deliberately DON'T also retain the raw file bytes: keeping
-        # both the bytes and the parsed frame — and re-concatenating on every
-        # rerun — is what pushed the shared instance over its memory limit.
+        # Stream each file in row chunks, folding every chunk into a small
+        # per-(skill, vendor, 30-min slot) aggregate. The full raw dataset is
+        # never held in memory at once, so a YTD multi-file load no longer
+        # OOM-crashes the shared app. Only the compact aggregate (plus the set
+        # of dates it covers) is kept in session state.
         if uploaded:
             _sig = tuple((f.name, getattr(f, "size", 0)) for f in uploaded)
             _total_mb = sum(getattr(f, "size", 0) for f in uploaded) / (1024 * 1024)
@@ -2090,34 +2094,38 @@ with st.sidebar:
                     "30-minute Interval column) — that shrinks the data ~48×."
                 )
             elif st.session_state.get("csv_upload_sig") != _sig:
-                # Only (re)parse when the set of uploaded files actually changes.
-                _frames, _bad = [], []
+                # Only (re)ingest when the set of uploaded files actually changes.
+                _agg = None
+                _dates: set = set()
+                _bad = []
                 for f in uploaded:
                     try:
-                        _frames.append(pd.read_csv(f))
+                        f.seek(0)
+                        for _chunk in pd.read_csv(f, chunksize=_CSV_CHUNK_ROWS):
+                            _agg = combine_aggregates([_agg, aggregate_chunk(_chunk)])
+                            if "CallDate" in _chunk.columns:
+                                _dates.update(
+                                    pd.to_datetime(_chunk["CallDate"], errors="coerce")
+                                    .dropna().dt.date.tolist()
+                                )
                     except Exception as _e:
                         _bad.append(f"{f.name}: {_e}")
                 for _msg in _bad:
                     st.warning(f"Could not read {_msg}")
-                if _frames:
-                    _raw_csv = pd.concat(_frames, ignore_index=True)
-                    del _frames
-                    # Downcast numerics to roughly halve the frame's footprint.
-                    # String columns are left as-is so the skill→LOB mapping and
-                    # column renames keep working unchanged.
-                    for _c in _raw_csv.select_dtypes(include=["float64"]).columns:
-                        _raw_csv[_c] = pd.to_numeric(_raw_csv[_c], downcast="float")
-                    for _c in _raw_csv.select_dtypes(include=["int64"]).columns:
-                        _raw_csv[_c] = pd.to_numeric(_raw_csv[_c], downcast="integer")
-                    st.session_state["csv_raw_df"] = _raw_csv
-                    st.session_state["csv_upload_sig"] = _sig
+                if _agg is not None and not _agg.empty:
+                    _rd = sorted(_dates)
+                    st.session_state["csv_agg_df"]       = _agg
+                    st.session_state["csv_report_dates"] = _rd
+                    st.session_state["csv_call_date"]    = (
+                        _rd[-1].strftime("%m/%d/%Y") if _rd else None
+                    )
+                    st.session_state["csv_upload_sig"]   = _sig
         # Clear button — only show when data is stored
-        if st.session_state.get("csv_raw_df") is not None:
+        if st.session_state.get("csv_agg_df") is not None:
             if st.button("🗑️ Clear Data", use_container_width=True):
-                st.session_state.pop("csv_raw_df", None)
-                st.session_state.pop("csv_upload_sig", None)
-                st.session_state.pop("sp_raw", None)
-                st.session_state.pop("lob_comments", None)
+                for _k in ("csv_agg_df", "csv_report_dates", "csv_call_date",
+                           "csv_upload_sig", "sp_raw", "lob_comments"):
+                    st.session_state.pop(_k, None)
                 clear_comments()   # also wipe disk so other users see clean state
                 st.rerun()
         st.caption("Columns: SkillName, SupplierName, Interval, NCO, NCH, AHT, ABN, ASA, TotalServiceLevelCalls")
@@ -2180,17 +2188,14 @@ call_date: str = None
 report_dates: list = None   # every distinct CallDate in the loaded actuals
 
 if data_source == "📁 Upload CSV":
-    raw = st.session_state.get("csv_raw_df")
-    if raw is not None:
-        if not raw.empty:
-            if "CallDate" in raw.columns:
-                try:
-                    _cd = pd.to_datetime(raw["CallDate"], errors="coerce").dropna()
-                    call_date = _cd.max().strftime("%m/%d/%Y")
-                    report_dates = sorted(_cd.dt.date.unique())
-                except Exception:
-                    call_date = None
-                    report_dates = None
+    _agg = st.session_state.get("csv_agg_df")
+    if _agg is not None:
+        if not _agg.empty:
+            # Dates were captured during ingest; the summary/vendor/interval
+            # tables are re-derived from the compact aggregate every run, so
+            # mapping / target / rule edits take effect without re-reading files.
+            call_date    = st.session_state.get("csv_call_date")
+            report_dates = st.session_state.get("csv_report_dates")
             _active_mapping  = st.session_state.get("custom_mapping")   # None → use built-in
             if _active_mapping:
                 # Exception rules: LOB renames apply before aggregation
@@ -2198,8 +2203,8 @@ if data_source == "📁 Upload CSV":
                     _active_mapping, st.session_state.get("exception_rules", [])
                 )
             _active_targets  = st.session_state.get("custom_targets")   # None → use built-in
-            summary_df, vendor_summaries, interval_df = prepare(
-                raw, custom_mapping=_active_mapping, custom_targets=_active_targets,
+            summary_df, vendor_summaries, interval_df = finalize(
+                _agg, custom_mapping=_active_mapping, custom_targets=_active_targets,
                 hidden_lobs=_HIDDEN_LOBS,
             )
             data_ok = True
