@@ -2139,6 +2139,7 @@ vendor_summaries: dict = {}
 interval_df = pd.DataFrame()
 data_ok = False
 call_date: str = None
+report_dates: list = None   # every distinct CallDate in the loaded actuals
 
 if data_source == "📁 Upload CSV":
     stored = st.session_state.get("stored_files")
@@ -2154,9 +2155,12 @@ if data_source == "📁 Upload CSV":
         if not raw.empty:
             if "CallDate" in raw.columns:
                 try:
-                    call_date = pd.to_datetime(raw["CallDate"], errors="coerce").max().strftime("%m/%d/%Y")
+                    _cd = pd.to_datetime(raw["CallDate"], errors="coerce").dropna()
+                    call_date = _cd.max().strftime("%m/%d/%Y")
+                    report_dates = sorted(_cd.dt.date.unique())
                 except Exception:
                     call_date = None
+                    report_dates = None
             _active_mapping  = st.session_state.get("custom_mapping")   # None → use built-in
             if _active_mapping:
                 # Exception rules: LOB renames apply before aggregation
@@ -2195,12 +2199,12 @@ else:  # SharePoint
         if _raw_sp is not None and not _raw_sp.empty:
             if "CallDate" in _raw_sp.columns:
                 try:
-                    call_date = (
-                        pd.to_datetime(_raw_sp["CallDate"], errors="coerce")
-                        .max().strftime("%m/%d/%Y")
-                    )
+                    _cd = pd.to_datetime(_raw_sp["CallDate"], errors="coerce").dropna()
+                    call_date = _cd.max().strftime("%m/%d/%Y")
+                    report_dates = sorted(_cd.dt.date.unique())
                 except Exception:
                     call_date = None
+                    report_dates = None
             _active_mapping  = st.session_state.get("custom_mapping")
             if _active_mapping:
                 _active_mapping = _rules_apply_to_mapping(
@@ -2300,10 +2304,15 @@ if data_ok and _fc_data is not None and call_date:
     if _fc_report_date is not None:
         _fc_today = datetime.now(timezone(timedelta(hours=-5))).date()
         if _fc_report_date < _fc_today:
+            # The actuals are aggregated over every loaded day, so sum the
+            # forecast across the same days. ``_fc_report_date`` (the latest
+            # CallDate) gates past-vs-intraday above; here we feed the full set
+            # of dates so a month-long load isn't compared to a single day.
+            _fc_dates = report_dates or [_fc_report_date]
             # Guarded: a bad forecast may cost its columns, never the dashboard.
             try:
                 summary_df = add_forecast_cols(
-                    summary_df, _fc_data, _fc_report_date, "Consolidated",
+                    summary_df, _fc_data, _fc_dates, "Consolidated",
                     lob_map=_fc_lob_map,
                 )
                 _fc_sites = _fc_data["Site"].unique()
@@ -2311,7 +2320,7 @@ if data_ok and _fc_data is not None and call_date:
                     _fc_sheet = _fc_resolve_vendor_site(_fc_vendor, _fc_sites)
                     if _fc_sheet:
                         vendor_summaries[_fc_vendor] = add_forecast_cols(
-                            vendor_summaries[_fc_vendor], _fc_data, _fc_report_date, _fc_sheet,
+                            vendor_summaries[_fc_vendor], _fc_data, _fc_dates, _fc_sheet,
                             lob_map=_fc_lob_map,
                         )
             except Exception as _fc_apply_exc:
