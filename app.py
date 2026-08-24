@@ -2061,6 +2061,12 @@ with st.sidebar:
     uploaded = None
     sp_load_clicked = False
 
+    # Combined-upload ceiling for this shared Streamlit Cloud app. The instance
+    # has ~1 GB RAM and a CSV parses to a DataFrame several× its text size, so a
+    # large multi-file load OOM-crashed the app for EVERY user. Rejecting an
+    # over-large batch up front keeps one big upload from taking the app down.
+    _MAX_UPLOAD_MB = 200
+
     if data_source == "📁 Upload CSV":
         st.markdown("**Upload CSV files**")
         uploaded = st.file_uploader(
@@ -2069,15 +2075,47 @@ with st.sidebar:
             accept_multiple_files=True,
             label_visibility="collapsed",
         )
-        # Persist uploaded bytes in session state so refreshes don't wipe the data
+        # Parse uploads ONCE into a single, downcast DataFrame held in session
+        # state. We deliberately DON'T also retain the raw file bytes: keeping
+        # both the bytes and the parsed frame — and re-concatenating on every
+        # rerun — is what pushed the shared instance over its memory limit.
         if uploaded:
-            st.session_state["stored_files"] = [
-                {"name": f.name, "data": f.read()} for f in uploaded
-            ]
+            _sig = tuple((f.name, getattr(f, "size", 0)) for f in uploaded)
+            _total_mb = sum(getattr(f, "size", 0) for f in uploaded) / (1024 * 1024)
+            if _total_mb > _MAX_UPLOAD_MB:
+                st.error(
+                    f"⚠️ These files total {_total_mb:,.0f} MB, over the "
+                    f"{_MAX_UPLOAD_MB} MB limit for this shared app. Upload fewer "
+                    "files at once, or pre-aggregate to daily rows (drop the "
+                    "30-minute Interval column) — that shrinks the data ~48×."
+                )
+            elif st.session_state.get("csv_upload_sig") != _sig:
+                # Only (re)parse when the set of uploaded files actually changes.
+                _frames, _bad = [], []
+                for f in uploaded:
+                    try:
+                        _frames.append(pd.read_csv(f))
+                    except Exception as _e:
+                        _bad.append(f"{f.name}: {_e}")
+                for _msg in _bad:
+                    st.warning(f"Could not read {_msg}")
+                if _frames:
+                    _raw_csv = pd.concat(_frames, ignore_index=True)
+                    del _frames
+                    # Downcast numerics to roughly halve the frame's footprint.
+                    # String columns are left as-is so the skill→LOB mapping and
+                    # column renames keep working unchanged.
+                    for _c in _raw_csv.select_dtypes(include=["float64"]).columns:
+                        _raw_csv[_c] = pd.to_numeric(_raw_csv[_c], downcast="float")
+                    for _c in _raw_csv.select_dtypes(include=["int64"]).columns:
+                        _raw_csv[_c] = pd.to_numeric(_raw_csv[_c], downcast="integer")
+                    st.session_state["csv_raw_df"] = _raw_csv
+                    st.session_state["csv_upload_sig"] = _sig
         # Clear button — only show when data is stored
-        if st.session_state.get("stored_files"):
+        if st.session_state.get("csv_raw_df") is not None:
             if st.button("🗑️ Clear Data", use_container_width=True):
-                st.session_state.pop("stored_files", None)
+                st.session_state.pop("csv_raw_df", None)
+                st.session_state.pop("csv_upload_sig", None)
                 st.session_state.pop("sp_raw", None)
                 st.session_state.pop("lob_comments", None)
                 clear_comments()   # also wipe disk so other users see clean state
@@ -2142,16 +2180,8 @@ call_date: str = None
 report_dates: list = None   # every distinct CallDate in the loaded actuals
 
 if data_source == "📁 Upload CSV":
-    stored = st.session_state.get("stored_files")
-    if stored:
-        import io as _io
-        frames = []
-        for f in stored:
-            try:
-                frames.append(pd.read_csv(_io.BytesIO(f["data"])))
-            except Exception as e:
-                st.sidebar.warning(f"Could not read {f['name']}: {e}")
-        raw = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+    raw = st.session_state.get("csv_raw_df")
+    if raw is not None:
         if not raw.empty:
             if "CallDate" in raw.columns:
                 try:
@@ -2174,7 +2204,7 @@ if data_source == "📁 Upload CSV":
             )
             data_ok = True
         else:
-            st.warning("No data could be read from the stored files.")
+            st.warning("No data could be read from the uploaded files.")
     else:
         st.info("⬆️ Upload your CSV files from the sidebar to load the dashboard.")
 
