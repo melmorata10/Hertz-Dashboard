@@ -134,14 +134,19 @@ def add_forecast_cols(
     Forecast Volume is the forecast call volume itself for ``report_date``;
     Forecast Variance is how far actual offered ran over/under that volume,
     (NCO ÷ forecast − 1) × 100 — so +5% means 5% above forecast, −5% below.
-    ``fc_df`` is the tidy frame from :func:`parse_daily_forecast`; volumes come
-    from ``site``'s sheet. LOBs with no forecast column (or zero forecast)
-    show NaN. Pass ``with_variance=False`` on a partial (intraday) day — the
-    volume still shows but the variance column is left out. Columns that end
-    up with no values at all (no forecast for the date, or variance withheld)
-    are NOT added, so the tables only ever show them with real data. The
-    Grand Total variance compares only the LOBs that have a forecast, so
-    numerator and denominator cover the same lines of business.
+    ``report_date`` may be a single date or a collection of dates: the actuals
+    (NCO) are aggregated over every day in the loaded data, so when a
+    multi-day range (e.g. a whole month) is loaded the forecast is summed
+    across the same days — otherwise a month of actuals would be compared
+    against a single day's forecast. ``fc_df`` is the tidy frame from
+    :func:`parse_daily_forecast`; volumes come from ``site``'s sheet. LOBs with
+    no forecast column (or zero forecast) show NaN. Pass ``with_variance=False``
+    on a partial (intraday) day — the volume still shows but the variance
+    column is left out. Columns that end up with no values at all (no forecast
+    for the date, or variance withheld) are NOT added, so the tables only ever
+    show them with real data. The Grand Total variance compares only the LOBs
+    that have a forecast, so numerator and denominator cover the same lines of
+    business.
     """
     if lob_map is None:
         lob_map = FORECAST_LOB_MAP
@@ -149,7 +154,14 @@ def add_forecast_cols(
     out["Forecast Volume"] = float("nan")
     out["Forecast Variance"] = float("nan")
 
-    sel = fc_df[(fc_df["Site"] == site) & (fc_df["Date"] == report_date)]
+    # ``report_date`` is either one date or a collection of them (the full set
+    # of days the loaded actuals span). Normalise to a set so a month-long load
+    # sums the forecast across every day, matching the aggregated actuals.
+    if isinstance(report_date, str) or not hasattr(report_date, "__iter__"):
+        report_dates = {report_date}
+    else:
+        report_dates = set(report_date)
+    sel = fc_df[(fc_df["Site"] == site) & (fc_df["Date"].isin(report_dates))]
     if not sel.empty:
         # All name matching is case/whitespace-insensitive: "REX TNC",
         # "Rex TNC" and "rex tnc " are the same column, so nobody has to
